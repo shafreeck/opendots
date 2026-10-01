@@ -1,3 +1,6 @@
+import { projectTaskDetail, type TaskDetail } from './task-detail.ts';
+import { AuthoredDocuments } from './authored-documents.ts';
+import { AuthoredDocumentHost } from './authored-document-host.ts';
 import { ObjectiveInput, type ObjectiveInputRequest, type ObjectiveInputDestination } from './objective-input.ts';
 import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -60,6 +63,8 @@ export class RuntimeService {
   private notifications?: NotificationOutbox;
   private artifacts?: Artifacts;
   private artifactVersions?: ArtifactVersions;
+  private authoredDocuments?: AuthoredDocuments;
+  private taskReads = new Map<string,Promise<TaskDetail>>();
   private uploads?: AttachmentUploads;
   private dbPath: string;
   private initializing?: Promise<void>;
@@ -184,7 +189,7 @@ export class RuntimeService {
       await this.initialize();
       const binding = this.binding!; const adapter = this.requireAdapter();
       // Recover only idempotent admissions. Control/approval uncertainty needs an explicit retry.
-      for (const command of this.store.commands().filter(value => ['pending', 'unknown'].includes(value.status) && ['chat', 'objective', 'objective_input'].includes(value.kind))) {
+      for (const command of this.store.recoverableCommands().filter(value => value.errorCode !== 'upstream_authorization_denied')) {
         if (Date.now() - command.updatedAt < Math.min(30_000, 1000 * 2 ** Math.min(command.attempts, 5))) continue;
         await this.dispatch(command).catch(() => undefined);
       }
@@ -236,6 +241,8 @@ export class RuntimeService {
     const current = this.store.command(command.id)!;
     if (current.status === 'accepted') return current;
     if (current.status === 'rejected') throw new ConflictError('This command was rejected. Review its status before submitting a new command.');
+    if (current.errorCode === 'upstream_authorization_denied') throw new ConflictError('Runtime authorization rejected this command. Automatic or explicit replay is blocked until authority is reviewed.');
+    if (current.kind === 'objective_control' && this.store.laterControlReview(current.id)) throw new ConflictError('A later reviewed control exists. The historical unknown command must not be dispatched again.');
     const running = this.inFlight.get(command.id); if (running) return running;
     // The durable command is already admitted for this fixed owner. Revoking a
     // browser must not silently cancel or replay admitted background work.
@@ -274,6 +281,10 @@ export class RuntimeService {
         const overview = await this.overview();
         const objective = overview.objectives.find(value => value.id === payload.objectiveId);
         if (!objective) throw new MissingError('Objective not found in the local Context');
+        this.checkObjective(objective);
+        if (objective.coordinator_session_id !== binding.sessionId || (objective.initiating_principal_id != null && objective.initiating_principal_id !== binding.principalId)) throw new ConflictError('Objective control is outside the saved owner Session');
+        const actions = objective.status === 'active' ? ['pause','cancel'] : ['paused','blocked'].includes(objective.status) ? ['resume','cancel'] : [];
+        if (objective.revision !== payload.expectedRevision || !actions.includes(String(payload.action))) throw new ConflictError('The original Objective revision or action is no longer current.');
         receipt = await adapter.controlObjective(objective.id, payload.action as 'pause' | 'resume' | 'cancel', Number(payload.expectedRevision));
         const value = receipt as { objective?: RuntimeObjective };
         if (value.objective) { this.checkObjective(value.objective); this.store.setView('objective', value.objective.id, value.objective); }
@@ -282,7 +293,7 @@ export class RuntimeService {
       } else if (command.kind === 'approval') {
         // Runtime revalidates revision, action and authority; renderer cannot supply scope/paths.
         const approval = await adapter.getApproval(binding.sessionId, String(payload.approvalId));
-        if (approval.id !== payload.approvalId) throw new ConflictError('Approval scope changed');
+        if (approval.id !== payload.approvalId || approval.revision !== payload.expectedRevision || approval.status !== 'pending_human' || (payload.decision === 'allow_once' && !approval.available_scopes?.includes('once'))) throw new ConflictError('Approval scope, revision or pending decision changed');
         receipt = await adapter.decideApproval(binding.sessionId, approval.id, { expected_revision: Number(payload.expectedRevision), decision: payload.decision as 'allow_once' | 'deny' });
         this.store.setView('approval', approval.id, receipt);
       } else if (command.kind === 'turn_cancel') {
@@ -295,7 +306,11 @@ export class RuntimeService {
       void this.refresh(); return this.store.command(command.id)!;
     } catch (error) {
       const definitive = error instanceof ConflictError || error instanceof MissingError || (error instanceof MorphzError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status));
-      this.store.record(command.id, definitive ? 'rejected' : 'unknown', null, error instanceof MorphzError ? error.code ?? `upstream_${error.status}` : definitive ? 'scope_or_revision_conflict' : 'upstream_result_unknown');
+      // A later refusal proves only that this attempt was refused. It cannot
+      // establish whether a response-lost predecessor caused an external effect.
+      const status = command.status === 'unknown' ? 'unknown' : definitive ? 'rejected' : 'unknown';
+      const code = error instanceof MorphzError && [401,403].includes(error.status) ? 'upstream_authorization_denied' : error instanceof MorphzError ? error.code ?? `upstream_${error.status}` : definitive ? 'scope_or_revision_conflict' : 'upstream_result_unknown';
+      this.store.record(command.id, status, command.receipt, code);
       if (error instanceof MorphzError && [401, 403].includes(error.status)) this.initialized = false;
       throw error;
     }
@@ -340,27 +355,51 @@ export class RuntimeService {
     const { objective, input } = await this.objectiveInputContext(objectiveId);
     const target = input.target(objective);
     const capabilities = await this.requireAdapter().getCapabilities();
-    return capabilities.directed_input === true ? target : { ...target, available: false, replyAvailable: false, reason: 'directed_input_unavailable' };
+    return capabilities.directed_input === true ? target : { ...target, available: false, replyAvailable: false, waitInputAvailable: false, reason: 'directed_input_unavailable' };
   }
   async sendObjectiveInput(objectiveId: string, input: ObjectiveInputRequest) {
+    if (!input || typeof input.text !== 'string' || Object.keys(input).some(k=>!['text','idempotencyKey','expectedGeneration','replyToRequestId','acknowledgeQuestionUnavailable','expectedSessionId'].includes(k))) throw new ConflictError('Invalid task input');
     const existing = this.store.commandByKey(input.idempotencyKey);
     if (existing) {
       const payload = existing.payload;
-      if (existing.kind !== 'objective_input' || payload.objectiveId !== objectiveId || payload.text !== input.text || payload.expectedGeneration !== input.expectedGeneration || payload.replyToRequestId !== input.replyToRequestId) throw new ConflictError('This command key already names a different task input');
+      if (existing.kind !== 'objective_input' || payload.objectiveId !== objectiveId || payload.text !== input.text.trim() || payload.expectedGeneration !== input.expectedGeneration || payload.replyToRequestId !== input.replyToRequestId || payload.acknowledgeQuestionUnavailable !== input.acknowledgeQuestionUnavailable || (input.expectedSessionId !== undefined && payload.sessionId !== input.expectedSessionId)) throw new ConflictError('This command key already names a different task input');
       return this.dispatch(existing); // Preserve original native receipt identity even after task generation advances.
     }
     const context = await this.objectiveInputContext(objectiveId);
     const prepared = context.input.prepare(context.objective, input);
-    const payload = { objectiveId, text: prepared.text, expectedGeneration: input.expectedGeneration, ...(input.replyToRequestId !== undefined ? { replyToRequestId: input.replyToRequestId } : {}), destination: prepared.destination };
+    const payload = { objectiveId, sessionId: this.binding!.sessionId, text: prepared.text, expectedGeneration: input.expectedGeneration, ...(input.acknowledgeQuestionUnavailable !== undefined ? {acknowledgeQuestionUnavailable:input.acknowledgeQuestionUnavailable} : {}), ...(input.replyToRequestId !== undefined ? { replyToRequestId: input.replyToRequestId } : {}), destination: prepared.destination };
     this.assertRequestAuthorized();
     return this.dispatch(this.store.prepare('objective_input', input.idempotencyKey, payload));
   }
-  async controlObjective(objectiveId: string, action: 'pause' | 'resume' | 'cancel', expectedRevision: number, key: string) {
-    this.requireAdapter(); return this.dispatch(this.store.prepare('objective_control', key, { objectiveId, action, expectedRevision }));
+  async controlObjective(objectiveId: string, action: 'pause' | 'resume' | 'cancel', expectedRevision: number, key: string, review: {reviewedUnknownControlKey?:string;acknowledgeUncertainOutcome?:boolean} = {}) {
+    this.requireAdapter(); this.assertRequestAuthorized();
+    if (!['pause','resume','cancel'].includes(action) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || typeof key !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(key) || Object.keys(review).some(k=>!['reviewedUnknownControlKey','acknowledgeUncertainOutcome'].includes(k))) throw new ConflictError('Invalid task control');
+    if ((review.reviewedUnknownControlKey === undefined) !== (review.acknowledgeUncertainOutcome === undefined) || (review.acknowledgeUncertainOutcome !== undefined && review.acknowledgeUncertainOutcome !== true)) throw new ConflictError('A reviewed unknown outcome requires exact predecessor and acknowledgement');
+    const payload = {objectiveId,action,expectedRevision,...review};
+    const existing = this.store.commandByKey(key);
+    if (existing) return this.dispatch(this.store.prepare('objective_control',key,payload));
+    if (review.reviewedUnknownControlKey !== undefined) {
+      const binding = await this.verifiedIdentity();
+      const scheduler = await this.requireAdapter().getContextScheduler(binding.contextId);
+      if (scheduler.context_id !== binding.contextId) throw new ConflictError('Fresh task Context does not match saved binding');
+      const objective = scheduler.objectives.find(row=>row.objective.id===objectiveId)?.objective;
+      if (!objective) throw new ConflictError('Exact task is absent from the bounded authoritative scheduler');
+      this.checkObjective(objective);
+      if (objective.id !== objectiveId || objective.coordinator_session_id !== binding.sessionId || objective.delivery_session_id !== binding.sessionId || (objective.initiating_principal_id != null && objective.initiating_principal_id !== binding.principalId) || objective.revision !== expectedRevision) throw new ConflictError('Fresh authoritative task review does not match the displayed owner or revision');
+      const actions = objective.status === 'active' ? ['pause','cancel'] : ['paused','blocked'].includes(objective.status) ? ['resume','cancel'] : [];
+      if (!actions.includes(action)) throw new ConflictError('The current native task state does not permit that control');
+      this.store.setView('objective',objective.id,objective);
+    }
+    this.assertRequestAuthorized();
+    return this.dispatch(this.store.prepare('objective_control', key, payload));
   }
   async decideApproval(approvalId: string, decision: 'allow_once' | 'deny', expectedRevision: number, key: string) {
-    this.requireAdapter(); return this.dispatch(this.store.prepare('approval', key, { approvalId, decision, expectedRevision }));
+    this.requireAdapter(); this.assertRequestAuthorized();
+    if (!['allow_once','deny'].includes(decision) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || typeof key !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw new ConflictError('Invalid approval decision');
+    return this.dispatch(this.store.prepare('approval', key, { approvalId, decision, expectedRevision }));
   }
+  commandLookup(key: string) { this.assertRequestAuthorized(); return this.store.commandLookup(key); }
+  messagesPage(input: {before?:string;limit?:number} = {}) { this.assertRequestAuthorized(); return this.store.messagesPage(input); }
   async cancelTurn(rootTurnId: string, expectedRevision: number, key: string) {
     this.requireAdapter(); return this.dispatch(this.store.prepare('turn_cancel', key, { rootTurnId, expectedRevision }));
   }
@@ -414,6 +453,58 @@ export class RuntimeService {
   createArtifactDocument(input: CreateArtifactDocumentInput) { return this.artifactVersionFacade().create(input); }
   appendArtifactVersion(id: string, input: AppendArtifactVersionInput) { return this.artifactVersionFacade().append(id, input); }
   downloadArtifactVersion(id: string, version: string) { return this.artifactVersionFacade().downloadVersion(id, version); }
+  private authoredDocumentFacade() {
+    this.assertRequestAuthorized();
+    if (this.closed) throw new RuntimeUnavailableError('Product host is closing');
+    const b=this.store.binding();
+    if (!b?.verified || !b.principalId) throw new RuntimeUnavailableError('A verified owner is required for authored documents');
+    return this.authoredDocuments ??= new AuthoredDocuments({db:this.store.db,binding:{ownerId:b.userId,sessionId:b.sessionId,principalId:b.principalId,agentId:b.agentId,contextId:b.contextId,verified:true},assertAuthorized:()=>this.assertRequestAuthorized()});
+  }
+  listAuthoredDocuments(page:{afterId?:string;limit?:number}={}) { return this.authoredDocumentFacade().list(page); }
+  authoredDocumentHistory(id:string,page:{afterId?:string;limit?:number}={}) { return this.authoredDocumentFacade().history(id,page); }
+  downloadAuthoredVersion(id:string,version:string) { return this.authoredDocumentFacade().downloadVersion(id,version); }
+  createAuthoredDocumentHost(authority:NativeHostAuthority,authorize:()=>Promise<void>) { return new AuthoredDocumentHost({documents:this.authoredDocumentFacade(),authority,authorize:()=>this.requestAuthorization.run(undefined,async()=>{await authorize();await this.verifiedIdentity();if(this.closed)throw new RuntimeUnavailableError('Product host is closing');})}); }
+  async taskDetail(id:string):Promise<TaskDetail> {
+    this.assertRequestAuthorized();
+    if (!/^[A-Za-z0-9_-]{1,200}$/.test(id)) throw new MissingError('Task not found');
+    if (this.closed) throw new RuntimeUnavailableError('Product host is closing');
+    let operation=this.taskReads.get(id);
+    if(!operation){operation=this.readTaskDetail(id).finally(()=>this.taskReads.delete(id));this.taskReads.set(id,operation);}
+    const detail=await operation;this.assertRequestAuthorized();return detail;
+  }
+  private async readTaskDetail(id:string):Promise<TaskDetail> {
+    const cached=this.store.views<TaskDetail>('task_detail').find(value=>value.objective.id===id);
+    try {
+      const b=await this.verifiedIdentity(),adapter=this.requireAdapter();
+      await this.refresh();this.assertRequestAuthorized();
+      const scheduler=await adapter.getContextScheduler(b.contextId);
+      if(scheduler.context_id!==b.contextId||!Array.isArray(scheduler.objectives))throw new ConflictError('Task scheduler does not match fixed Context');
+      const objective=scheduler.objectives.find(row=>row.objective.id===id)?.objective;
+      if(!objective)throw new MissingError('Exact task is not present in the bounded native scheduler');
+      const reasons:string[]=[];let nativeEvents:Array<Record<string,unknown>>=[];
+      try {const page=await adapter.getNativeSessionEvents(b.sessionId);if(!Array.isArray(page.events))throw new Error('Invalid native event page');nativeEvents=page.events;if(page.next_before_sequence!==null&&page.next_before_sequence!==undefined)reasons.push('native_history_window');}
+      catch(error){if(error instanceof MorphzError&&[401,403].includes(error.status))throw error;reasons.push('native_history_unavailable');}
+      const ioEvents=this.store.events(b.sessionId),artifacts=new Artifacts(adapter,b.sessionId,()=>ioEvents).list();
+      let detail=projectTaskDetail({binding:b,objective,scheduler,nativeEvents,ioEvents,artifacts,approvals:this.store.views('approval'),previous:cached,reasons});
+      // Focused reads improve bounded scheduler evidence only for already proven
+      // exact task Threads. Never enumerate unrelated Context work by inference.
+      const snapshots=new Map((scheduler.threads??[]).map(row=>[String((row.thread as any)?.id),row]));
+      for(const thread of detail.threads.slice(0,25)){
+        try {const result=await adapter.getContextThread(b.contextId,thread.id),snapshot=result.snapshot as Record<string,any>|undefined;if(result.context_id!==b.contextId||snapshot?.thread?.id!==thread.id)throw new ConflictError('Focused task Thread scope changed');snapshots.set(thread.id,snapshot!);}
+        catch(error){if(error instanceof ConflictError||(error instanceof MorphzError&&[401,403].includes(error.status)))throw error;reasons.push('focused_thread_unavailable');}
+      }
+      if(detail.threads.length>25)reasons.push('focused_thread_limit');
+      detail=projectTaskDetail({binding:b,objective,scheduler:{...scheduler,threads:[...snapshots.values()]},nativeEvents,ioEvents,artifacts,approvals:this.store.views('approval'),previous:cached,reasons});
+      const jobIds=detail.threads.flatMap(t=>t.activations.flatMap((a:any)=>a.jobs.map((j:any)=>j.id)));
+      detail.authoredDocuments=this.authoredDocumentFacade().forTask({objectiveId:id,jobIds,threadIds:detail.threads.map(t=>t.id)});
+      this.assertRequestAuthorized();this.store.setView('objective',objective.id,objective);this.store.setView('task_detail',id,detail);return detail;
+    } catch(error) {
+      this.assertRequestAuthorized();
+      if(error instanceof ConflictError||(error instanceof MorphzError&&[401,403].includes(error.status)))throw error;
+      if(!cached)throw error;
+      return {...cached,freshness:{fresh:false,checkedAt:Date.now(),reason:'runtime_evidence_unavailable'},bounds:{incomplete:true,reasons:[...new Set([...cached.bounds.reasons,'runtime_evidence_unavailable'])]}};
+    }
+  }
   private async modelFacade() { await this.initialize(); this.assertRequestAuthorized(); return this.models ??= new ModelSettings(this.requireAdapter(), this.binding!.agentId); }
   listNotifications(limit=100,after?:string) { if(!this.notifications)throw new RuntimeUnavailableError('No assistant identity is configured for notifications');return this.notifications.snapshot(limit,after); }
   acknowledgeNotifications(ids:string[]) { if(!this.notifications)throw new RuntimeUnavailableError('No assistant identity is configured for notifications');return this.notifications.acknowledge(ids); }
@@ -501,7 +592,7 @@ export class RuntimeService {
     this.closed = true; if (this.timer) clearInterval(this.timer); this.streamAbort?.abort();
     const calendarClosed=this.calendar?.close();
     const artifactVersionsClosed=this.artifactVersions?.close();
-    await this.syncing; await this.initializing; await Promise.allSettled([...this.inFlight.values()]); await this.streamPromise; await this.calendarReconciling?.catch(()=>undefined); await calendarClosed; await artifactVersionsClosed; this.reminders?.close(); this.notifications?.close(); this.uploads?.close(); this.store.close();
+    await this.syncing; await this.initializing; await Promise.allSettled([...this.inFlight.values()]); await this.streamPromise; await Promise.allSettled([...this.taskReads.values()]); this.authoredDocuments?.close(); await this.calendarReconciling?.catch(()=>undefined); await calendarClosed; await artifactVersionsClosed; this.reminders?.close(); this.notifications?.close(); this.uploads?.close(); this.store.close();
   }
 }
 function safeFailure(error: unknown): string {

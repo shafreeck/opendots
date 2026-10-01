@@ -1,85 +1,30 @@
-# Latest recorded validation checkpoint
+# Reconstructed-tree validation
 
-Date: 2026-09-30 17:40 UTC. Code checkpoint: `a497382` (CLI help wording added after the aggregate).
+2026-10-01. This is fresh reconstruction evidence, not certification of the inaccessible historical `683ccdd` tree. Original history was not recovered. See [recovery ledger](../RECOVERY.md).
 
-- `npm test`: 485 tests, 480 passed, 5 intentionally skipped,
-  zero failed. The skips are live public GitHub, native connector/calendar/proposal L2,
-  and one UID-specific configuration fixture. All three native L2 checks were run separately.
-- `npm run typecheck`: passed on the merged HTTPS transport working tree.
-  The lead reran 35 focused remote-transport/desktop checks; the independent
-  reviewer ran 54 backend checks and 25 desktop checks. Node syntax and `git diff --check` also passed.
-- Independent read-only reviews cleared owner-auth backend/UI and concrete
-  connector configuration/listener/BFF integration. Reviewers reproduced the
-  reported revocation races before and after their fixes.
-- Explicit canonical HTTPS origin integration and desktop transport were
-  independently reviewed, including normalized Chromium TLS-bypass switches.
-  Fixtures simulate the trusted proxy hop; no real TLS proxy or phone was exercised.
-- Official pinned Morphz checkout remains clean; no Runtime patches or manual
-  Frame editing are in this product.
+## Current checks
 
-## Recent actual Runtime reruns
+- Aggregate: 623 tests, 618 passed, 5 intentionally skipped, 0 failed
+- Strict TypeScript, Node syntax checks and whitespace checks passed
+- Frontend: 133 VM tests pass, including 32 new reconstruction regressions
+- Unchanged official Morphz 0.1.3 binary, revision `7e8f7d81f8b00fd45544d94d5b9a321214633df1`, SHA256 `29a5c5cb04cdc407858db04b49c5f52fd18892c831aad395e01cc3e4f172b8d3`
 
-Each run used the unchanged official v0.1.3 binary, disposable local data and a
-scripted loopback model provider. No paid inference or personal credentials.
+## Fresh actual Runtime evidence
 
-| Command | Outcome | Local provider calls |
-| --- | --- | --- |
-| `node scripts/runtime-smoke.mjs --product` | Core file tool, conversation/task state, receipts/restart, native schedule lifecycle, denial, recall and inbox durability passed | 10 |
-| `node scripts/runtime-stream-smoke.mjs` | Public stream/restart/no input replay/final deduplication passed | 1 |
-| `node scripts/runtime-resource-smoke.mjs` | Native upload offsets/restart/hash, exact attachment command and registered resource downloads passed | 2 |
-| `node --test test/connector-native.test.ts` | Native host callback and exact Job scope, committed result and replay passed; public GitHub transport was synthetic | 2 |
-| `node --test test/calendar-native.test.ts` | Daily/weekly future native UTC, restart stable IDs and pause/resume/cancel passed; no due trigger in this fixture | 0 |
-| `node --test test/calendar-proposal-native.test.ts` | Actual host proposal, zero schedule POSTs before owner, one after confirmation, exact UTC and restart/replay identity | 2 |
-| `npm run test:runtime-calendar-delivery` | One actual UTC due reply while BFF offline, recovered exactly once across two BFF restarts | 1 |
+`OPENDOTS_RUNTIME_BINARY=/path/to/morphz node scripts/runtime-authored-recovery-smoke.mjs` passed with 11 deterministic loopback provider calls and zero paid calls:
 
-Set `OPENDOTS_RUNTIME_BINARY` to the verified runtime executable for these runs.
-These are L2 scheduling/protocol/application evidence, not real model quality,
-actual microphone/audio-provider performance, live desktop input fidelity or
-successful Internet service connectivity. The historical real GitHub GET timed
-out; that live boundary remains unverified. See `ACCEPTANCE.md`, `STATUS.md` and
-`COMPLETION_GAPS.md` for the wider scope and later updates.
+- A native background Objective authored two genuinely new immutable Markdown versions
+- Exact native Job, Call, Activation, Thread and Objective provenance; owner-authenticated downloads match bytes and SHA256
+- Same native Call replays its original receipt; changed arguments are rejected
+- Two exact current-wait responses carry request, execution generation and Session; replay of an older accepted input does not resolve a newer wait
+- Two BFF restarts and one graceful matching Runtime-process restart
+- Local document bytes remain downloadable offline, cached task detail is marked stale
+- Original durable offline chat command identity is reused, committed reply observed, callback recovery succeeds automatically
 
-The Electron client now has explicit native microphone consent and bounded,
-exclusive artifact saves, with policy/controller fixtures and a dependency lock;
-it has not been installed/launched here. The approved visual refinement is implemented; generated
-concept previews do not substitute for real browser pixel QA. No deployment or
-GitHub publication has occurred.
+`node scripts/runtime-stream-smoke.mjs` also passed: one scripted call, zero paid calls, BFF restart preserves identity, no input replay, honest draft discard, one committed output.
 
-Calendar integration was independently reviewed with 107 passing combined
-module/HTTP/frontend/audio checks and additional admission/shutdown/lifecycle probes.
-The lead separately reran its native L2 test. The calendar feature includes explicit UI/API and an opt-in model-callable
-proposal-only host; it cannot self-confirm. The existing native schedule_tx tool
-is unchanged. See CALENDAR_PROPOSALS.md and CALENDAR_DELIVERY_VALIDATION.md for
-the exact evidence and the failed/interrupted fixture setup attempts that were
-not counted as passes.
+## Boundaries
 
-## Native mobile checkpoint
+No real provider/account, paid model, graphical browser/device, deployment, arbitrary binary import, cross-session lineage, crash exactly-once or pending-approval-over-Runtime-restart acceptance is claimed. The historical protected-path approval experiment was not repeated. Experimental backup remains fail-closed for the new schema; its legacy-schema tests are explicitly isolated and do not claim current product backup support.
 
-The separate apps/mobile lockfile passed a clean offline scripts-disabled install.
-All17 mobile policy/state/script tests and strict TypeScript passed, independently
-rerun by the reviewer and lead. A transpiled App callback fixture additionally
-checked background/reconnect and stale native callbacks. The final one-worker
-offline Metro export produced both Android and iOS Hermes bytecode bundles; the
-initial default-worker export failed with exit137 and is not counted as a pass.
-These checks do not compile an APK/IPA or verify native permissions, storage, TLS
-or a real device. The bounded trusted-BFF wrapper was independently reviewed;
-platform navigation/download/cookie caveats remain in apps/mobile/README.md.
-The root aggregate above is separate from these17 mobile tests.
-
-
-## Artifact lineage and recovery checkpoint
-
-Artifact module, BFF/desktop download and Files UI reviews cleared their bounded
-ordinary correctness scope.47 focused backend/auth/desktop tests passed, and
-95 frontend/audio tests passed. The actual unchanged-Runtime resource script
-was extended and rerun successfully: native input/output provenance, two linked
-versions, exact downloaded bytes, original receipt and history across restart;
-two scripted local provider calls, zero paid calls.
-
-Product-only backup/restore has11 passing synthetic tests, including committed
-WAL data, new-path/no-overwrite behavior, restored-session invalidation and exact
-artifact/calendar/effect receipts. Final independent security review was stopped
-and remains incomplete after correction of the reported destination-path issue.
-The CLI is explicitly experimental and is not application-enabled. No real
-private-data recovery or whole-system consistency drill has been performed.
-See ARTIFACT_VERSIONS.md and BACKUP_RECOVERY.md for exact limits.
+Earlier surviving validation is preserved in VALIDATION_20260930_SURVIVING.md as historical evidence only. More focused provenance review and bounded-storage regressions are still in progress and will be reported separately.

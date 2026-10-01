@@ -5,7 +5,7 @@ export class ObjectiveInputError extends Error {
   constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
 export interface ObjectiveInputBinding { agentId: string; contextId: string; sessionId: string; principalId: string }
-export interface ObjectiveInputRequest { text: string; idempotencyKey: string; expectedGeneration: number; replyToRequestId?: string }
+export interface ObjectiveInputRequest { text: string; idempotencyKey: string; expectedGeneration: number; replyToRequestId?: string; acknowledgeQuestionUnavailable?: boolean; expectedSessionId?: string }
 export interface ObjectiveInputDestination { kind: 'objective'; objective_id: string; generation: number; reply_to_request_id?: string }
 const object = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const identifier = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
@@ -34,16 +34,19 @@ export class ObjectiveInput {
     }
     // The pinned wait DTO has no exact question text. A lifecycle rationale or
     // latest chat reply is not proof of the content that this request ID names.
-    return { objectiveId: objective.id, generation: objective.generation, revision: objective.revision, status: objective.status, available, reason, replyRequestId, replyAvailable: false, questionText: null, replyReason: replyRequestId ? 'question_text_unavailable' : 'no_current_question' };
+    return { objectiveId: objective.id, sessionId: binding.sessionId, waitInputAvailable: Boolean(replyRequestId), requiresConfirmation: Boolean(replyRequestId), generation: objective.generation, revision: objective.revision, status: objective.status, available, reason, replyRequestId, replyAvailable: false, questionText: null, replyReason: replyRequestId ? 'question_text_unavailable' : 'no_current_question' };
   }
   prepare(objective: RuntimeObjective, input: ObjectiveInputRequest) {
-    if (!object(input) || Object.keys(input).some(key => !['text','idempotencyKey','expectedGeneration','replyToRequestId'].includes(key)) || typeof input.text !== 'string' || !input.text.trim() || input.text.trim().length > 4000 || typeof input.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey) || !positive(input.expectedGeneration)) throw new ObjectiveInputError(400, 'invalid_objective_input', 'Text, stable command key and the displayed Objective generation are required');
+    if (!object(input) || Object.keys(input).some(key => !['text','idempotencyKey','expectedGeneration','replyToRequestId','acknowledgeQuestionUnavailable','expectedSessionId'].includes(key)) || typeof input.text !== 'string' || !input.text.trim() || input.text.trim().length > 4000 || typeof input.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey) || !positive(input.expectedGeneration)) throw new ObjectiveInputError(400, 'invalid_objective_input', 'Text, stable command key and the displayed Objective generation are required');
+    if (input.acknowledgeQuestionUnavailable !== undefined && input.acknowledgeQuestionUnavailable !== true) throw new ObjectiveInputError(400, 'invalid_wait_acknowledgement', 'Explicit acknowledgement must be true');
+    if (input.expectedSessionId !== undefined && input.expectedSessionId !== this.binding.sessionId) throw new ObjectiveInputError(409, 'objective_session_changed', 'The displayed Session no longer matches this target');
+    if (input.acknowledgeQuestionUnavailable === true && input.replyToRequestId === undefined) throw new ObjectiveInputError(400, 'wait_identity_required', 'Acknowledgement applies only to an exact waiting request');
     const target = this.target(objective);
     if (!target.available) throw new ObjectiveInputError(409, target.reason!, 'The Objective is not active. No supplemental input was sent; keep the draft and explicitly review its state.');
     if (target.generation !== input.expectedGeneration) throw new ObjectiveInputError(409, 'objective_generation_changed', 'The Objective execution generation changed. Refresh the target without silently retargeting this draft.');
     if (input.replyToRequestId !== undefined && (typeof input.replyToRequestId !== 'string' || input.replyToRequestId.length < 1 || input.replyToRequestId.length > 512)) throw new ObjectiveInputError(400, 'invalid_question_identity', 'Use the exact displayed question identity');
     if (input.replyToRequestId !== undefined && target.replyRequestId !== input.replyToRequestId) throw new ObjectiveInputError(409, 'objective_question_changed', 'This exact question is no longer waiting for a reply in the current Session');
-    if (input.replyToRequestId !== undefined && !target.replyAvailable) throw new ObjectiveInputError(409, 'objective_question_text_unavailable', 'The exact question content is unavailable. Supplemental input remains separate and does not confirm this question.');
+    if (input.replyToRequestId !== undefined && !target.replyAvailable && input.acknowledgeQuestionUnavailable !== true) throw new ObjectiveInputError(409, 'objective_question_text_unavailable', 'The exact question content is unavailable. Supplemental input remains separate and does not confirm this question.');
     const destination: ObjectiveInputDestination = { kind: 'objective', objective_id: objective.id, generation: input.expectedGeneration, ...(input.replyToRequestId !== undefined ? { reply_to_request_id: input.replyToRequestId } : {}) };
     return { text: input.text.trim(), idempotencyKey: input.idempotencyKey, destination };
   }

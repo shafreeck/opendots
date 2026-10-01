@@ -17,10 +17,17 @@ import { createProductSnapshot, verifyProductSnapshot, restoreProductSnapshot } 
 const config = validateOwnerAuthConfig({ version: 1, credential: { kind: 'morphz_login_token_sha256', hashHex: authDigest('e'.repeat(64)) }, sessionTtlSeconds: 3600, idleTtlSeconds: 3600, maximumDevices: 8 });
 const origin = 'https://backup-fixture.example';
 function rootFor(t: test.TestContext) { const root = mkdtempSync(join(tmpdir(), 'opendots-backup-test-')); t.after(() => rmSync(root, { recursive: true, force: true })); return root; }
-async function fixture(t: test.TestContext, authenticated = true) {
+async function fixture(t: test.TestContext, authenticated = true, legacySchema = true) {
   const root = rootFor(t), source = join(root, 'source.sqlite');
   writeFileSync(source, '', { flag: 'wx', mode: 0o600 });
   const store = new RuntimeStore(source), binding = store.ensureBinding('http://127.0.0.1:39999');
+  // These backup fixtures explicitly model the previously supported schema.
+  // Runtime recovery tables are outside that reviewed backup boundary.
+  if (legacySchema) {
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM runtime_control_links').get()?.n, 0);
+    store.db.exec('DROP TABLE runtime_control_links');
+    store.laterControlReview = () => null; // The legacy schema had no control links.
+  }
   store.verifyBinding({ id: binding.sessionId, agent_id: binding.agentId, context_id: binding.contextId, status: 'active' }, 'principal-fixture');
   const event: any = { io_version: '1', type: 'output.committed', event_id: 'event-fixture', sequence: 1, session_id: binding.sessionId, message: { content: { encoding: 'utf8', text: 'PRIVATE-FIXTURE-CONVERSATION' } } };
   store.ingest(binding.sessionId, { subscription: {}, cursor: 'opaque-fixture-cursor', events: [event] });
@@ -219,4 +226,10 @@ test('CLI performs explicit snapshot/verify/restore with concise output and reje
   const result = run('restore', '--snapshot', destination, '--destination', restored, '--app-stopped'); assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).reconnectPerformed, false);
   for (const args of [[], ['snapshot','--source',f.source,'--source',f.source,'--destination',join(f.root,'bad')], ['verify','--snapshot',destination,'--unknown'], ['--help','extra']]) assert.equal(run(...args).status, 1);
   for (const output of [made.stdout, made.stderr, result.stdout, result.stderr]) { assert.ok(!output.includes('PRIVATE-FIXTURE')); assert.ok(!output.includes('e'.repeat(64))); }
+});
+
+test('current durable control-recovery schema remains outside the reviewed backup boundary', async t => {
+  const f=await fixture(t,true,false),destination=join(f.root,'current-schema-refused');
+  await assert.rejects(createProductSnapshot({source:f.source,destination}),{code:'backup_product_schema_unsupported'});
+  assert.equal(existsSync(destination),false);
 });

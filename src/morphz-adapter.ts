@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import { connectorGet, ConnectorError } from './connector-types.ts';
 import { ApplicationStreamProjection } from './runtime-observer.ts';
 import type { NativeSchedule } from './reminders.ts';
 import type { ObjectiveInputDestination } from './objective-input.ts';
@@ -67,7 +68,7 @@ const pathId = (id: string) => encodeURIComponent(id);
 class SessionAdapter {
   protected readonly options: TransportOptions;
   protected readonly headers: Headers;
-  private readonly fetcher: typeof globalThis.fetch;
+  protected readonly fetcher: typeof globalThis.fetch;
   readonly baseUrl: string;
   private capabilities?: IoCapabilities;
   constructor(options: TransportOptions, headers: Headers) {
@@ -238,8 +239,14 @@ export class LocalOperatorAdapter extends SessionAdapter {
   getAgentProviderBindings(agentId: string) { return this.call<unknown>(`/api/agents/${pathId(agentId)}/provider-accounts`); }
   bindAgentProviderAccount(agentId: string, accountId: string) { return this.call<unknown>(`/api/agents/${pathId(agentId)}/provider-accounts/${pathId(accountId)}`, {}, 'PUT'); }
   listAgents() { return this.call<{ agents: Array<{ id: string; root_context_id: string }> }>('/api/agents'); }
+  private async taskRead<T>(path: string): Promise<T> {
+    try { return await connectorGet(this.fetcher, this.baseUrl + path, this.headers, AbortSignal.timeout(this.options.timeoutMs ?? 15_000), 2_097_152) as T; }
+    catch (error) { if (error instanceof ConnectorError) throw new MorphzError(error.status,error.code); throw error; }
+  }
+  getNativeSessionEvents(sessionId: string) { return this.taskRead<{events:Array<Record<string,unknown>>;next_before_sequence:number|null}>(`/api/sessions/${pathId(sessionId)}/events?limit=1000`); }
+  getContextThread(contextId: string, threadId: string) { return this.taskRead<Record<string, unknown>>(`/api/contexts/${pathId(contextId)}/threads/${pathId(threadId)}`); }
   getContextScheduler(contextId: string) {
-    return this.call<{ context_id: string; objectives: Array<{ objective: RuntimeObjective }>; detail_bounds: { limit: number; has_more_objectives: boolean }; generated_at: string }>(`/api/contexts/${pathId(contextId)}/scheduler?include_terminal=true&limit=2000`);
+    return this.call<{ context_id: string; objectives: Array<{ objective: RuntimeObjective; active_evaluation?: Record<string, unknown> | null }>; threads?: Array<Record<string, unknown>>; detail_bounds: { limit: number; has_more_objectives: boolean }; generated_at: string }>(`/api/contexts/${pathId(contextId)}/scheduler?include_terminal=true&limit=2000`);
   }
   getContextOverview(contextId: string, sessionId: string) {
     return this.call<ContextOverview>(`/api/contexts/${pathId(contextId)}/overview?${new URLSearchParams({ session_id: sessionId })}`);

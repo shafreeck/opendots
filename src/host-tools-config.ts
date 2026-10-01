@@ -13,6 +13,10 @@ export interface CalendarProposalsHostToolConfig {
   readonly callbackToken: string;
   readonly allowProposals: true;
 }
+export interface AuthoredDocumentsHostToolConfig {
+  readonly callbackToken: string;
+  readonly allowAuthoring: true;
+}
 /** Normalized, server-owned config from one explicitly selected private file. */
 export interface HostToolsConfig {
   readonly sourceVersion: 1 | 2;
@@ -23,6 +27,7 @@ export interface HostToolsConfig {
   readonly tools: Readonly<{
     githubPublic?: Readonly<GithubPublicHostToolConfig>;
     calendarProposals?: Readonly<CalendarProposalsHostToolConfig>;
+    authoredDocuments?: Readonly<AuthoredDocumentsHostToolConfig>;
   }>;
 }
 
@@ -49,9 +54,9 @@ export function validateHostToolsConfig(value: unknown): HostToolsConfig {
     checkConnector(origin.origin === c.runtimeOrigin && ['http:', 'https:'].includes(origin.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) && !origin.username && !origin.password && !origin.search && !origin.hash && origin.pathname === '/', 'host_tools_configuration_invalid');
     checkConnector(Number.isInteger(c.callbackPort) && Number(c.callbackPort) >= 1024 && Number(c.callbackPort) <= 65535, 'host_tools_configuration_invalid');
     const configured = connectorRecord(c.tools);
-    connectorKeys(configured, [], ['githubPublic', 'calendarProposals']);
+    connectorKeys(configured, [], ['githubPublic', 'calendarProposals', 'authoredDocuments']);
     checkConnector(Object.keys(configured).length >= 1, 'host_tools_configuration_invalid');
-    const tools: { githubPublic?: Readonly<GithubPublicHostToolConfig>; calendarProposals?: Readonly<CalendarProposalsHostToolConfig> } = {};
+    const tools: { githubPublic?: Readonly<GithubPublicHostToolConfig>; calendarProposals?: Readonly<CalendarProposalsHostToolConfig>; authoredDocuments?: Readonly<AuthoredDocumentsHostToolConfig> } = {};
     if (Object.hasOwn(configured, 'githubPublic')) {
       const github = connectorRecord(configured.githubPublic);
       connectorKeys(github, ['callbackToken', 'allowPublicGithubReads', 'repositories']);
@@ -67,7 +72,14 @@ export function validateHostToolsConfig(value: unknown): HostToolsConfig {
       checkConnector(token(calendar.callbackToken) && calendar.allowProposals === true, 'host_tools_configuration_invalid');
       tools.calendarProposals = Object.freeze({ callbackToken: calendar.callbackToken, allowProposals: true });
     }
-    checkConnector(!tools.githubPublic || !tools.calendarProposals || tools.githubPublic.callbackToken !== tools.calendarProposals.callbackToken, 'host_tools_configuration_tokens_must_differ');
+    if (Object.hasOwn(configured, 'authoredDocuments')) {
+      const authored = connectorRecord(configured.authoredDocuments);
+      connectorKeys(authored, ['callbackToken', 'allowAuthoring']);
+      checkConnector(token(authored.callbackToken) && authored.allowAuthoring === true, 'host_tools_configuration_invalid');
+      tools.authoredDocuments = Object.freeze({ callbackToken: authored.callbackToken, allowAuthoring: true });
+    }
+    const tokens = Object.values(tools).map(tool => tool.callbackToken);
+    checkConnector(new Set(tokens).size === tokens.length, 'host_tools_configuration_tokens_must_differ');
     return Object.freeze({ sourceVersion: 2, ownerId: c.ownerId, runtimeOrigin: c.runtimeOrigin, binding, callbackPort: Number(c.callbackPort), tools: Object.freeze(tools) });
   } catch (error) {
     if (error instanceof ConnectorError) throw error;

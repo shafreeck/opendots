@@ -1,5 +1,7 @@
 # Implementation status
 
+**Reconstruction update, 2026-10-01:** the core has been rebuilt and freshly tested; see [current validation](VALIDATION_CURRENT.md) and [recovery ledger](../RECOVERY.md). The table below is the surviving September 30 inventory. Its old local-only/publication decisions and test counts are historical and are superseded by the recovery ledger. No full-product acceptance is claimed.
+
 Updated 2026-09-30. Active development; no full-clone or production-ready claim.
 
 | Area | Status | Evidence / remaining gate |

@@ -12,3 +12,6 @@ coverage/
 .data/
 
 native/linux-desktop/opendots-linux-desktop
+
+# Also ignore dependency-directory symlinks used for local recovery checks.
+node_modules

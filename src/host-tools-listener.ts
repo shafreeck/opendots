@@ -5,8 +5,9 @@ import { ConnectorError, checkConnector } from './connector-types.ts';
 
 export const HOST_CONNECTOR_PATH = '/api/host-tools/connectors/call';
 export const HOST_CALENDAR_PATH = '/api/host-tools/calendar/call';
+export const HOST_DOCUMENT_PATH = '/api/host-tools/documents/call';
 export interface NativeHostRoute {
-  readonly path: typeof HOST_CONNECTOR_PATH | typeof HOST_CALENDAR_PATH;
+  readonly path: typeof HOST_CONNECTOR_PATH | typeof HOST_CALENDAR_PATH | typeof HOST_DOCUMENT_PATH;
   readonly token: string;
   readonly handle: (authorization: string, body: unknown, signal: AbortSignal) => Promise<unknown>;
 }
@@ -43,13 +44,27 @@ const PUBLIC_ERRORS: Readonly<Record<string, number>> = Object.freeze({
   connector_authority_unavailable: 503,
   connector_transport_unavailable: 503,
   connector_response_limit: 502,
+  connector_provenance_invalid: 502,
+  connector_activation_mismatch: 403,
+  connector_objective_mismatch: 403,
+  authored_document_invalid_request: 400,
+  authored_document_call_conflict: 409,
+  authored_document_provenance_changed: 409,
+  authored_document_head_conflict: 409,
+  authored_document_limit: 409,
+  authored_document_storage_limit: 409,
+  authored_document_receipt_limit: 409,
+  authored_document_not_found: 404,
+  authored_document_scope_denied: 403,
+  authored_document_provenance_invalid: 403,
+  authored_document_closed: 503,
   calendar_proposal_limit: 409,
   calendar_proposal_call_conflict: 409,
   calendar_proposal_not_found: 404,
   calendar_proposal_scope_denied: 403,
 });
 
-/** The two private native callbacks share only HTTP transport. Callers verify
+/** The private native callbacks share only HTTP transport. Callers verify
  * configuration and identity before starting; each domain handler must still
  * verify its complete native invocation proof. Construction opens no socket. */
 export class NativeHostListener {
@@ -71,11 +86,11 @@ export class NativeHostListener {
 
   constructor(options: NativeHostListenerOptions) {
     checkConnector(Number.isInteger(options.port) && options.port >= 1024 && options.port <= 65_535, 'connector_configuration_invalid');
-    checkConnector(Array.isArray(options.routes) && options.routes.length >= 1 && options.routes.length <= 2, 'connector_registry_invalid');
+    checkConnector(Array.isArray(options.routes) && options.routes.length >= 1 && options.routes.length <= 3, 'connector_registry_invalid');
     this.port = options.port;
     const tokens = new Set<string>();
     for (const route of options.routes) {
-      checkConnector(route && [HOST_CONNECTOR_PATH, HOST_CALENDAR_PATH].includes(route.path) && !this.routes.has(route.path) && typeof route.handle === 'function', 'connector_registry_invalid');
+      checkConnector(route && [HOST_CONNECTOR_PATH, HOST_CALENDAR_PATH, HOST_DOCUMENT_PATH].includes(route.path) && !this.routes.has(route.path) && typeof route.handle === 'function', 'connector_registry_invalid');
       checkConnector(typeof route.token === 'string' && /^[\x21-\x7e]{32,1024}$/.test(route.token), 'connector_token_invalid');
       checkConnector(!tokens.has(route.token), 'connector_separate_callback_token_required');
       tokens.add(route.token);
@@ -114,7 +129,9 @@ export class NativeHostListener {
       this.server.once('listening', listening);
       try { this.server.listen(this.port, '127.0.0.1'); } catch { error(); }
     });
-    return this.starting;
+    const pending=this.starting;
+    void pending.catch(()=>{if(this.starting===pending)this.starting=undefined;});
+    return pending;
   }
 
   private track<T>(operation: Promise<T>): Promise<T> {

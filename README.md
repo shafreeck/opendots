@@ -1,5 +1,7 @@
 # opendots
 
+> Reconstruction in progress, 2026-10-01. The original latest source/Git history was not recovered. This tree starts from a preserved older snapshot and rebuilds missing features. Read [RECOVERY.md](RECOVERY.md) for fresh evidence and remaining gates; older status/test documents are historical.
+
 A personal assistant built on Morphz: persistent conversation, native background Objectives, real approvals, BYOK, and a visible computer with explicit human/AI control ownership.
 
 This is active implementation, not a completed dots clone. [STATUS](docs/STATUS.md) separates implemented, fixture-tested, real-Runtime-tested, and missing capabilities. No simulation is silently substituted for a missing runtime.

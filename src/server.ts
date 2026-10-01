@@ -13,6 +13,7 @@ import { VoiceService, VoiceError, type VoiceServiceOptions } from './voice-serv
 import { VoiceStreamService, VoiceStreamError } from './voice-stream.ts';
 import { configuredVoiceProvider } from './voice-provider.ts';
 import { NotificationError } from './notification-outbox.ts';
+import { AuthoredDocumentError } from './authored-documents.ts';
 import { ArtifactError } from './artifacts.ts';
 import { ArtifactVersionError, type CreateArtifactDocumentInput, type AppendArtifactVersionInput } from './artifact-versions.ts';
 import { MemoryViewError } from './memory-view.ts';
@@ -71,6 +72,7 @@ export function createApplication(options: ApplicationOptions) {
   const hostToolsConfigPath=options.hostToolsConfigPath??options.connectorConfigPath;
   const hostToolsConfig=hostToolsConfigPath===undefined?undefined:readHostToolsConfig(hostToolsConfigPath);
   if(hostToolsConfig&&options.mode==='demo')throw new ConnectorError('connector_runtime_mode_required');
+  if(hostToolsConfig?.tools.authoredDocuments&&!authConfig)throw new ConnectorError('authored_owner_authentication_required');
   if(hostToolsConfig?.tools.calendarProposals&&!authConfig)throw new ConnectorError('calendar_owner_authentication_required');
   for(const tool of Object.values(hostToolsConfig?.tools??{}))if(authConfig?.credential.kind==='morphz_login_token_sha256'&&authDigest(tool!.callbackToken)===authConfig.credential.hashHex)throw new ConnectorError('connector_separate_callback_token_required');
   mkdirSync(dirname(resolve(options.dbPath)), { recursive: true, mode: 0o700 });
@@ -84,7 +86,7 @@ export function createApplication(options: ApplicationOptions) {
     if (authConfig && !runtime?.store.binding()?.userId) throw new AuthError('authentication_saved_owner_required', 503);
     if (hostToolsConfig) {
       if (!runtime?.adapter) throw new ConnectorError('connector_runtime_configuration_required');
-      hostTools=new ConfiguredHostTools({configPath:hostToolsConfigPath!,config:hostToolsConfig,runtimeOrigin:runtime.adapter.baseUrl,operatorToken:options.operatorToken,store:runtime.store,runtimeFetch:options.fetch,githubFetch:options.connectorGithubFetch,ownerAuthenticationConfigured:Boolean(authConfig),calendarFactory:(authority,authorize)=>runtime.createCalendarProposalHost(authority,authorize)});
+      hostTools=new ConfiguredHostTools({configPath:hostToolsConfigPath!,config:hostToolsConfig,runtimeOrigin:runtime.adapter.baseUrl,operatorToken:options.operatorToken,store:runtime.store,runtimeFetch:options.fetch,githubFetch:options.connectorGithubFetch,ownerAuthenticationConfigured:Boolean(authConfig),calendarFactory:(authority,authorize)=>runtime.createCalendarProposalHost(authority,authorize),authoredFactory:(authority,authorize)=>runtime.createAuthoredDocumentHost(authority,authorize)});
     }
   } catch (error) { if (runtime) void runtime.close(); else demo!.close(); throw error; }
   const connectors=hostToolsConfig?.tools.githubPublic?hostTools:undefined;
@@ -105,7 +107,7 @@ export function createApplication(options: ApplicationOptions) {
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   void ready.catch(() => {}); // Caller may await readiness; startup never emits an unhandled rejection.
   const disabledConnectors = { status: 'disabled', access: 'public_data', accountConnected: false, probePerformed: false, message: 'No public connector configuration supplied', connectors: [] };
-  const snapshot = (session?: AuthSession | null) => ({ ...(runtime ? runtime.snapshot() : { mode: 'demo', disclaimer: 'Simulation only. No model calls or real Morphz execution.', sessionId: 'local-demo', workerStatus, ...demo!.snapshot() }), csrfToken: session?.csrfToken ?? csrfToken, authentication: { enabled: Boolean(authConfig), session: session ?? null }, connectors: connectors?.snapshot() ?? disabledConnectors, calendarProposals:{enabled:Boolean(authConfig&&hostToolsConfig?.tools.calendarProposals),pendingCount:authConfig?runtime?.calendarProposalCount()??0:0}, computerPendingApprovals: computerHost?.approvals?.pendingCount() ?? 0, computerExecutor: computerHost?.snapshot() ?? { status: 'disabled', message: 'No computer Edge executor configured' } });
+  const snapshot = (session?: AuthSession | null) => ({ ...(runtime ? runtime.snapshot() : { mode: 'demo', disclaimer: 'Simulation only. No model calls or real Morphz execution.', sessionId: 'local-demo', workerStatus, ...demo!.snapshot() }), csrfToken: session?.csrfToken ?? csrfToken, authentication: { enabled: Boolean(authConfig), session: session ?? null }, connectors: connectors?.snapshot() ?? disabledConnectors, authoring:hostTools?.authoringSnapshot()??{enabled:false,status:'disabled',source:'opendots_authored'},calendarProposals:{enabled:Boolean(authConfig&&hostToolsConfig?.tools.calendarProposals),pendingCount:authConfig?runtime?.calendarProposalCount()??0:0}, computerPendingApprovals: computerHost?.approvals?.pendingCount() ?? 0, computerExecutor: computerHost?.snapshot() ?? { status: 'disabled', message: 'No computer Edge executor configured' } });
   const server = createServer(async (request, response) => {
     response.setHeader('cache-control', 'no-store'); response.setHeader('x-content-type-options', 'nosniff'); response.setHeader('referrer-policy', 'no-referrer');
     // Explicit matching WSS source: some browser engines do not map 'self' to WS.
@@ -172,6 +174,10 @@ export function createApplication(options: ApplicationOptions) {
         let asset; try { asset = readFileSync(local); } catch { throw new HttpError(404, 'Not found'); }
         response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' }); response.end(asset); return;
       }
+      const taskDetail = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]{1,200})\/detail$/);
+      if (request.method === 'GET' && taskDetail && runtime) { json(response, 200, await runtime.taskDetail(taskDetail[1])); return; }
+      const commandLookup = url.pathname.match(/^\/api\/commands\/([a-zA-Z0-9_-]{8,128})$/);
+      if (request.method === 'GET' && commandLookup && runtime) { json(response, 200, runtime.commandLookup(commandLookup[1])); return; }
       const taskInputTarget = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]{1,200})\/input-target$/);
       if (request.method === 'GET' && taskInputTarget && runtime) { json(response, 200, await runtime.objectiveInputTarget(taskInputTarget[1])); return; }
       if (request.method === 'GET' && url.pathname === '/api/uploads') { if (!runtime) throw new HttpError(409, 'Uploads require Runtime mode'); json(response, 200, await runtime.listUploads()); return; }
@@ -198,6 +204,13 @@ export function createApplication(options: ApplicationOptions) {
       if(request.method==='GET'&&proposalStatus){if(!authConfig||!runtime)throw new CalendarProposalError('calendar_owner_authentication_required',403);json(response,200,await runtime.calendarProposalStatus(proposalStatus[1]!));return;}
       const calendarHistory=url.pathname.match(/^\/api\/calendar-reminders\/(cal-[a-f0-9]{64})\/occurrences$/);
       if(request.method==='GET'&&calendarHistory&&runtime){json(response,200,await runtime.calendarReminderHistory(calendarHistory[1]!));return;}
+      const authoredDocument = url.pathname.match(/^\/api\/authored-documents\/(pdoc-[a-f0-9-]{36})$/);
+      const authoredContent = url.pathname.match(/^\/api\/authored-documents\/(pdoc-[a-f0-9-]{36})\/versions\/(pver-[a-f0-9-]{36})\/content$/);
+      if(request.method==='GET'&&(url.pathname==='/api/authored-documents'||authoredDocument||authoredContent)){
+        if(!authConfig||!runtime)throw new AuthoredDocumentError('authored_owner_authentication_required',403);
+        if(authoredContent){const {version,bytes}=runtime.downloadAuthoredVersion(authoredContent[1],authoredContent[2]);assertCurrent();response.setHeader('content-security-policy',"sandbox; default-src 'none'");const encoded=encodeURIComponent(version.name).replace(/[!'()*]/g,c=>`%${c.charCodeAt(0).toString(16).toUpperCase()}`);response.writeHead(200,{'content-type':'application/octet-stream','content-disposition':`attachment; filename="download"; filename*=UTF-8''${encoded}`,'content-length':bytes.byteLength,'x-content-type-options':'nosniff','cache-control':'no-store'});response.end(bytes);return;}
+        json(response,200,authoredDocument?runtime.authoredDocumentHistory(authoredDocument[1]):runtime.listAuthoredDocuments());return;
+      }
       const documentRoute = url.pathname.match(/^\/api\/artifact-documents\/(doc-[a-f0-9-]{36})$/);
       const versionContent = url.pathname.match(/^\/api\/artifact-documents\/(doc-[a-f0-9-]{36})\/versions\/(ver-[a-f0-9-]{36})\/content$/);
       const artifactCommand = url.pathname.match(/^\/api\/artifact-commands\/([a-zA-Z0-9_-]{8,128})$/);
@@ -303,6 +316,17 @@ export function createApplication(options: ApplicationOptions) {
       if (url.pathname === '/api/uploads' && runtime) { fields(input, ['draftKey','uploadKey','name','mediaType','sizeBytes','sha256']); json(response, 201, await runtime.createUpload(input as unknown as AttachmentUploadInput)); return; }
       const uploadControl = url.pathname.match(/^\/api\/uploads\/(upload-[a-f0-9-]{36})\/(reconcile|cancel)$/);
       if (uploadControl && runtime) { fields(input, []); json(response, 200, uploadControl[2] === 'cancel' ? await runtime.cancelUpload(uploadControl[1]) : await runtime.reconcileUpload(uploadControl[1])); return; }
+      const authoredPage=url.pathname.match(/^\/api\/authored-documents\/(pdoc-[a-f0-9-]{36})\/versions\/page$/);
+      if(url.pathname==='/api/authored-documents/page'||authoredPage){
+        if(!authConfig||!runtime)throw new AuthoredDocumentError('authored_owner_authentication_required',403);
+        fields(input,['afterId','limit']);const page={...(input.afterId!==undefined?{afterId:textField(input.afterId,'Document cursor',100)}:{}),...(input.limit!==undefined?{limit:revision(input.limit)}:{})};
+        json(response,200,authoredPage?runtime.authoredDocumentHistory(authoredPage[1],page):runtime.listAuthoredDocuments(page));return;
+      }
+      if (url.pathname === '/api/messages/page' && runtime) {
+        fields(input,['before','limit']);
+        if(input.limit!==undefined&&(!Number.isSafeInteger(input.limit)||Number(input.limit)<1||Number(input.limit)>100))throw new HttpError(400,'Page limit must be 1–100');
+        json(response,200,runtime.messagesPage({...input.before!==undefined?{before:textField(input.before,'History cursor',200)}:{},...input.limit!==undefined?{limit:Number(input.limit)}:{}}));return;
+      }
       if (url.pathname === '/api/jobs') {
         fields(input, runtime ? ['prompt', 'idempotencyKey'] : ['prompt', 'idempotencyKey', 'requireApproval']);
         const prompt = textField(input.prompt, 'Objective'); const key = requestKey(input.idempotencyKey);
@@ -318,14 +342,16 @@ export function createApplication(options: ApplicationOptions) {
       }
       const taskInput = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]{1,200})\/input$/);
       if (taskInput && runtime) {
-        fields(input, ['text','idempotencyKey','expectedGeneration','replyToRequestId']);
-        json(response, 202, await runtime.sendObjectiveInput(taskInput[1], { text: textField(input.text, 'Task input'), idempotencyKey: requestKey(input.idempotencyKey), expectedGeneration: revision(input.expectedGeneration), ...(input.replyToRequestId !== undefined ? { replyToRequestId: textField(input.replyToRequestId, 'Question', 512) } : {}) })); return;
+        fields(input, ['text','idempotencyKey','expectedGeneration','replyToRequestId','acknowledgeQuestionUnavailable','expectedSessionId']);
+        if(input.acknowledgeQuestionUnavailable!==undefined&&input.acknowledgeQuestionUnavailable!==true)throw new HttpError(400,'Explicit acknowledgement must be true');
+        json(response, 202, await runtime.sendObjectiveInput(taskInput[1], { text: textField(input.text, 'Task input'), idempotencyKey: requestKey(input.idempotencyKey), expectedGeneration: revision(input.expectedGeneration), ...(input.replyToRequestId !== undefined ? { replyToRequestId: textField(input.replyToRequestId, 'Question', 512) } : {}), ...(input.acknowledgeQuestionUnavailable===true?{acknowledgeQuestionUnavailable:true as const}:{}), ...(input.expectedSessionId!==undefined?{expectedSessionId:textField(input.expectedSessionId,'Session',200)}:{}) })); return;
       }
       const control = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]{1,200})\/control$/);
       if (control && runtime) {
-        fields(input, ['action', 'expectedRevision', 'idempotencyKey']);
+        fields(input, ['action', 'expectedRevision', 'idempotencyKey','reviewedUnknownControlKey','acknowledgeUncertainOutcome']);
+        if(input.acknowledgeUncertainOutcome!==undefined&&input.acknowledgeUncertainOutcome!==true)throw new HttpError(400,'Explicit uncertainty acknowledgement must be true');
         if (!['pause', 'resume', 'cancel'].includes(String(input.action))) throw new HttpError(400, 'Action must be pause, resume or cancel');
-        json(response, 200, await runtime.controlObjective(control[1], input.action as 'pause' | 'resume' | 'cancel', revision(input.expectedRevision), requestKey(input.idempotencyKey))); return;
+        json(response, 200, await runtime.controlObjective(control[1], input.action as 'pause' | 'resume' | 'cancel', revision(input.expectedRevision), requestKey(input.idempotencyKey), {...(input.reviewedUnknownControlKey!==undefined?{reviewedUnknownControlKey:requestKey(input.reviewedUnknownControlKey)}:{}),...(input.acknowledgeUncertainOutcome===true?{acknowledgeUncertainOutcome:true as const}:{})})); return;
       }
       const approval = url.pathname.match(/^\/api\/approvals\/([a-zA-Z0-9_-]{1,200})\/decision$/);
       if (approval && runtime) {
@@ -376,6 +402,7 @@ export function createApplication(options: ApplicationOptions) {
       else if(error instanceof VoiceStreamError)json(response,error.status,{error:error.code,code:error.code});
       else if (error instanceof ConnectorError) json(response, error.status, { error: error.code, code: error.code });
       else if(error instanceof CalendarReminderError){const status=/closed|authorization_unavailable/.test(error.code)?503:/invalid|required|limit|unsupported|out_of_range/.test(error.code)?400:409;json(response,status,{error:error.code,code:error.code});}
+      else if(error instanceof AuthoredDocumentError)json(response,error.status,{error:error.code,code:error.code});
       else if(error instanceof ArtifactVersionError)json(response,error.status,{error:error.code,code:error.code});
       else if(error instanceof CalendarProposalError)json(response,error.status,{error:error.code,code:error.code});
       else if (error instanceof ComputerApprovalError || error instanceof ObjectiveInputError || error instanceof AttachmentUploadError || error instanceof VoiceError || error instanceof HttpError || error instanceof RuntimeUnavailableError || error instanceof ComputerGatewayError || error instanceof ArtifactError) json(response, error.status, { error: error.message });
