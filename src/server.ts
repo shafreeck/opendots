@@ -86,7 +86,7 @@ export function createApplication(options: ApplicationOptions) {
     if (authConfig && !runtime?.store.binding()?.userId) throw new AuthError('authentication_saved_owner_required', 503);
     if (hostToolsConfig) {
       if (!runtime?.adapter) throw new ConnectorError('connector_runtime_configuration_required');
-      hostTools=new ConfiguredHostTools({configPath:hostToolsConfigPath!,config:hostToolsConfig,runtimeOrigin:runtime.adapter.baseUrl,operatorToken:options.operatorToken,store:runtime.store,runtimeFetch:options.fetch,githubFetch:options.connectorGithubFetch,ownerAuthenticationConfigured:Boolean(authConfig),calendarFactory:(authority,authorize)=>runtime.createCalendarProposalHost(authority,authorize),authoredFactory:(authority,authorize)=>runtime.createAuthoredDocumentHost(authority,authorize)});
+      hostTools=new ConfiguredHostTools({configPath:hostToolsConfigPath!,config:hostToolsConfig,runtimeOrigin:runtime.adapter.baseUrl,operatorToken:options.operatorToken,store:runtime.store,runtimeFetch:options.fetch,githubFetch:options.connectorGithubFetch,ownerAuthenticationConfigured:Boolean(authConfig),calendarFactory:(authority,authorize)=>runtime.createCalendarProposalHost(authority,authorize),authoredFactory:(authority,authorize,assertAuthorized)=>runtime.createAuthoredDocumentHost(authority,authorize,assertAuthorized)});
     }
   } catch (error) { if (runtime) void runtime.close(); else demo!.close(); throw error; }
   const connectors=hostToolsConfig?.tools.githubPublic?hostTools:undefined;

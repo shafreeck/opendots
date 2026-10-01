@@ -16,7 +16,7 @@ export interface ConfiguredHostToolsOptions{
   store:{db:DatabaseSync;binding():SavedBinding|undefined};runtimeFetch?:typeof fetch;githubFetch?:typeof fetch;
   ownerAuthenticationConfigured?:boolean;
   calendarFactory?:(authority:NativeHostAuthority,authorize:()=>Promise<void>)=>CalendarProposalHost;
-  authoredFactory?:(authority:NativeHostAuthority,authorize:()=>Promise<void>)=>AuthoredDocumentHost;
+  authoredFactory?:(authority:NativeHostAuthority,authorize:()=>Promise<void>,assertAuthorized:()=>void)=>AuthoredDocumentHost;
 }
 /** One explicitly configured private native listener, separately authorized
  * tool identities. V1 GitHub semantics stay unchanged; calendar is proposal-only. */
@@ -24,7 +24,7 @@ export class ConfiguredHostTools{
   private options:ConfiguredHostToolsOptions;private authority:NativeHostAuthority;private listener:NativeHostListener;
   private github?:ConnectorHost;private calendar?:CalendarProposalHost;private authored?:AuthoredDocumentHost;private closed=false;private starting?:Promise<void>;private closing?:Promise<void>;
   private lifetime=new AbortController();
-  private retryTimer?:NodeJS.Timeout;private retryDelay=250;private nextRetryAt:number|null=null;
+  private retryTimer?:NodeJS.Timeout;private retryDelay=250;private nextRetryAt:number|null=null;private retryAllowed=true;
   private state:'configured'|'starting'|'ready'|'unavailable'|'closed'='configured';
   private githubRegistration:'unverified'|'advertised'|'missing'='unverified';private calendarRegistration:'unverified'|'advertised'|'missing'='unverified';private authoredRegistration:'unverified'|'advertised'|'missing'='unverified';
   constructor(options:ConfiguredHostToolsOptions){
@@ -36,32 +36,44 @@ export class ConfiguredHostTools{
     this.authority=make(tools.githubPublic?CONNECTOR_TOOL:tools.calendarProposals?CALENDAR_TOOL:AUTHORED_DOCUMENT_TOOL);const routes:NativeHostRoute[]=[];
     if(tools.githubPublic){const config=tools.githubPublic;this.github=new ConnectorHost({db:options.store.db,token:config.callbackToken,runtime:this.authority,adapters:[new GitHubPublicConnector({repositories:config.repositories,fetch:options.githubFetch})],authorize:async()=>this.assertPolicy()});routes.push({path:HOST_CONNECTOR_PATH,token:config.callbackToken,handle:(authorization,body,signal)=>this.github!.handle(authorization,body,signal)});}
     if(tools.calendarProposals){checkConnector(typeof options.calendarFactory==='function','calendar_host_factory_required');this.calendar=options.calendarFactory(make(CALENDAR_TOOL),async()=>this.assertPolicy());routes.push({path:HOST_CALENDAR_PATH,token:tools.calendarProposals.callbackToken,handle:(_authorization,body,signal)=>this.calendar!.handle(body,signal)});}
-    if(tools.authoredDocuments){checkConnector(typeof options.authoredFactory==='function','authored_host_factory_required');this.authored=options.authoredFactory(make(AUTHORED_DOCUMENT_TOOL),async()=>this.assertPolicy());routes.push({path:HOST_DOCUMENT_PATH,token:tools.authoredDocuments.callbackToken,handle:(_authorization,body,signal)=>this.authored!.handle(body,signal)});}
+    if(tools.authoredDocuments){checkConnector(typeof options.authoredFactory==='function','authored_host_factory_required');this.authored=options.authoredFactory(make(AUTHORED_DOCUMENT_TOOL),async()=>this.assertPolicy(),()=>this.assertPolicy());routes.push({path:HOST_DOCUMENT_PATH,token:tools.authoredDocuments.callbackToken,handle:(_authorization,body,signal)=>this.authored!.handle(body,signal)});}
     this.listener=new NativeHostListener({port:options.config.callbackPort,routes});
   }
-  private assertPolicy(){checkConnector(!this.closed,'connector_host_closed',503);const c=this.options.config,current=readHostToolsConfig(this.options.configPath);checkConnector(connectorJson(c)===connectorJson(current),'connector_configuration_changed',403);const saved=this.options.store.binding();checkConnector(saved?.verified===true&&saved.userId===c.ownerId&&saved.runtimeOrigin===c.runtimeOrigin&&saved.principalId===c.binding.principalId&&saved.agentId===c.binding.agentId&&saved.contextId===c.binding.contextId&&saved.sessionId===c.binding.sessionId,'connector_saved_binding_required',403);}
+  private assertPolicy(){checkConnector(!this.closed,'connector_host_closed',503);checkConnector(this.retryAllowed,'connector_permission_denied',403);const c=this.options.config,current=readHostToolsConfig(this.options.configPath);checkConnector(connectorJson(c)===connectorJson(current),'connector_configuration_changed',403);const saved=this.options.store.binding();checkConnector(saved?.verified===true&&saved.userId===c.ownerId&&saved.runtimeOrigin===c.runtimeOrigin&&saved.principalId===c.binding.principalId&&saved.agentId===c.binding.agentId&&saved.contextId===c.binding.contextId&&saved.sessionId===c.binding.sessionId,'connector_saved_binding_required',403);}
   snapshot(){return{status:this.state,access:'public_data' as const,accountConnected:false as const,probePerformed:false as const,callbackListening:this.listener.snapshot().listening,nativeRegistration:this.githubRegistration,message:this.state==='ready'?'Dedicated native callback ready for allowlisted public reads; no GitHub account connected':this.state==='closed'?'Connector callback stopped':'Connector setup or native identity is not ready; no account connection or public API probe'};}
   calendarSnapshot(){return{enabled:Boolean(this.calendar),status:this.state,callbackListening:this.listener.snapshot().listening,nativeRegistration:this.calendarRegistration,tool:CALENDAR_TOOL,canSchedule:false,requiresOwnerConfirmation:true};}
   authoringSnapshot(){return{enabled:Boolean(this.authored),status:this.state,callbackListening:this.listener.snapshot().listening,nativeRegistration:this.authoredRegistration,tool:AUTHORED_DOCUMENT_TOOL,source:'opendots_authored' as const,formats:['text','markdown','csv'],nextRetryAt:this.nextRetryAt};}
   catalogue(){this.assertPolicy();return{...this.snapshot(),catalogue:this.github?.catalogue()??{source:'opendots_registered_adapters',nativeRegistrationVerified:false,connectors:[]}};}
   async nativeCatalogue(signal?:AbortSignal){this.assertPolicy();const result=await this.authority.catalogue(AbortSignal.any([this.lifetime.signal,...(signal?[signal]:[])]));this.assertPolicy();const capabilities=result.targets.find(t=>t.id==='target-default')?.capabilities??[];this.githubRegistration=capabilities.includes(CONNECTOR_TOOL)?'advertised':'missing';this.calendarRegistration=capabilities.includes(CALENDAR_TOOL)?'advertised':'missing';this.authoredRegistration=capabilities.includes(AUTHORED_DOCUMENT_TOOL)?'advertised':'missing';return result;}
   private schedule(delay:number){
-    if(this.closed)return;if(this.retryTimer)clearTimeout(this.retryTimer);
+    if(this.closed||!this.retryAllowed)return;if(this.retryTimer)clearTimeout(this.retryTimer);
     this.nextRetryAt=this.state==='ready'?null:Date.now()+delay;
     this.retryTimer=setTimeout(()=>{this.retryTimer=undefined;void this.attempt().catch(()=>undefined);},delay);this.retryTimer.unref();
   }
   private attempt():Promise<void>{
-    if(this.starting)return this.starting;checkConnector(!this.closed,'connector_host_closed',503);
+    if(this.starting)return this.starting;checkConnector(!this.closed,'connector_host_closed',503);checkConnector(this.retryAllowed,'connector_startup_unavailable',503);
     if(this.retryTimer){clearTimeout(this.retryTimer);this.retryTimer=undefined;}this.nextRetryAt=null;
     if(this.state!=='ready')this.state='starting';
     const operation=(async()=>{try{
       this.assertPolicy();await this.authority.verifyBinding(this.lifetime.signal);this.assertPolicy();
-      await this.listener.start();checkConnector(!this.closed,'connector_host_closed',503);this.state='ready';this.retryDelay=250;
-    }catch{if(!this.closed)this.state='unavailable';throw new ConnectorError('connector_startup_unavailable',503);}})();
+      await this.listener.start();this.assertPolicy();this.state='ready';this.retryDelay=250;
+    }catch(error){
+      if(!this.closed){
+        this.state='unavailable';
+        // Only known transport/service failures are retryable. Authorization,
+        // identity and local policy failures require an operator restart; even
+        // a missing policy file must never be treated as a network outage.
+        this.retryAllowed=error instanceof ConnectorError&&(
+          ['connector_transport_unavailable','connector_request_aborted','connector_callback_unavailable'].includes(error.code)||
+          /^connector_http_(408|425|429|500|502|503|504)$/.test(error.code));
+        if(!this.retryAllowed)await this.listener.close();
+      }
+      throw new ConnectorError('connector_startup_unavailable',503);
+    }})();
     this.starting=operation;
     void operation.then(()=>{if(this.starting===operation)this.starting=undefined;this.schedule(5000);},()=>{if(this.starting===operation)this.starting=undefined;const delay=this.retryDelay;this.retryDelay=Math.min(30000,delay*2);this.schedule(delay);});
     return operation;
   }
-  start():Promise<void>{if(this.closed)return Promise.reject(new ConnectorError('connector_host_closed',503));if(this.state==='ready'&&this.listener.snapshot().listening)return Promise.resolve();return this.attempt();}
+  start():Promise<void>{if(this.closed)return Promise.reject(new ConnectorError('connector_host_closed',503));if(!this.retryAllowed)return Promise.reject(new ConnectorError('connector_startup_unavailable',503));if(this.state==='ready'&&this.listener.snapshot().listening)return Promise.resolve();return this.attempt();}
   close():Promise<void>{if(this.closing)return this.closing;this.closed=true;this.state='closed';if(this.retryTimer)clearTimeout(this.retryTimer);this.retryTimer=undefined;this.nextRetryAt=null;this.lifetime.abort();const listener=this.listener.close(),github=this.github?.close(),calendar=this.calendar?.close(),authored=this.authored?.close();this.closing=(async()=>{await this.starting?.catch(()=>undefined);await Promise.all([listener,github,calendar,authored]);})();return this.closing;}
 }

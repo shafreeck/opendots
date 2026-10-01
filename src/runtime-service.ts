@@ -468,7 +468,23 @@ export class RuntimeService {
   listAuthoredDocuments(page:{afterId?:string;limit?:number}={}) { return this.authoredDocumentFacade().list(page); }
   authoredDocumentHistory(id:string,page:{afterId?:string;limit?:number}={}) { return this.authoredDocumentFacade().history(id,page); }
   downloadAuthoredVersion(id:string,version:string) { return this.authoredDocumentFacade().downloadVersion(id,version); }
-  createAuthoredDocumentHost(authority:NativeHostAuthority,authorize:()=>Promise<void>) { return new AuthoredDocumentHost({documents:this.authoredDocumentFacade(),authority,authorize:()=>this.requestAuthorization.run(undefined,async()=>{await authorize();await this.verifiedIdentity();if(this.closed)throw new RuntimeUnavailableError('Product host is closing');})}); }
+  createAuthoredDocumentHost(authority:NativeHostAuthority,authorize:()=>Promise<void>,assertAuthorized:()=>void) {
+    const documents=this.authoredDocumentFacade();
+    const guard=()=>{
+      if(this.closed)throw new RuntimeUnavailableError('Product host is closing');
+      const result:unknown=assertAuthorized();
+      if(result!==undefined){
+        if(result&&typeof(result as {then?:unknown}).then==='function')void Promise.resolve(result).catch(()=>undefined);
+        throw new RuntimeUnavailableError('Host policy admission must be synchronous');
+      }
+    };
+    // Install policy only around native receipt/transaction admission. The same
+    // document facade remains readable offline through browser owner admission.
+    return new AuthoredDocumentHost({documents:{
+      receipt:(...args)=>this.requestAuthorization.run(guard,()=>documents.receipt(...args)),
+      execute:(...args)=>this.requestAuthorization.run(guard,()=>documents.execute(...args)),
+    },authority,authorize:()=>this.requestAuthorization.run(undefined,async()=>{await authorize();await this.verifiedIdentity();if(this.closed)throw new RuntimeUnavailableError('Product host is closing');})});
+  }
   async taskDetail(id:string):Promise<TaskDetail> {
     this.assertRequestAuthorized();
     if (!/^[A-Za-z0-9_-]{1,200}$/.test(id)) throw new MissingError('Task not found');
