@@ -34,10 +34,24 @@ Earlier surviving validation is preserved in VALIDATION_20260930_SURVIVING.md as
 
 ## Graphical smoke attempt
 
-A dedicated dot-cloud browser was pointed at an isolated loopback fixture. Navigation failed with `net::ERR_BLOCKED_BY_CLIENT`, and selecting the tab explicitly reported a browser URL security-policy block. The browser never reached login. Six-view navigation, task/document controls, downloads, screenshots and graphical rendering remain untested. No forwarding workaround or policy bypass was attempted; the fixture was stopped. This does not establish Mac/mobile acceptance.
+A dedicated dot-cloud browser initially navigated to `http://127.0.0.1:42919` and returned `net::ERR_BLOCKED_BY_CLIENT`. A later attempt to select failed tab 14 returned `The requested URL protocol is not allowed. Allowed protocols: http:, https:`. The failed tab’s actual URL was not returned. These are distinct observations and do not establish an explicit prohibition on loopback HTTP or a confirmed cause for the initial navigation failure. The browser never reached login. Six-view navigation, task/document controls, downloads, screenshots and graphical rendering remain untested. No forwarding workaround or policy bypass was attempted; the fixture was stopped. This does not establish Mac/mobile acceptance.
 
 ## Final recorded-milestone parity audit
 
 [RECOVERY_PARITY.md](RECOVERY_PARITY.md) maps each recorded core milestone and endpoint to fresh evidence. Final fixes include accepted-approval acknowledgement after the pending row disappears; ambiguous ordinary chat/task submissions fail closed unless an exact original is explicitly selected; monotonic document-head updates and delayed-page viewport preservation; exact desktop authored-version saves; response-lost turn cancellation; and synchronous native-host policy/owner guards with no automatic retry after authorization denial.
 
 The exact immutable export passed 700 tests (695 passed, 5 skipped) and the 12-call native core journey again. A clean offline, scripts-disabled lockfile install was also verified on the reconstructed source line. The numerical total coincides with a historical report but is not evidence of original test-source recovery or identical coverage; the explicit parity checklist is the evidence.
+
+
+## Supplemental optional-test verification — 2026-10-01 04:41 UTC
+
+This is a separate addendum, not a replacement aggregate run. Local documentation checkpoint `214f087bb31c614485965c150f139c17cdc768d3` was verified against remote `5db148523658bfec01834b76c64a3bd6229437b7`, with identical tree `54a18cddb0ff349d0b2afccecf8003fd2a4fcc38`. The original aggregate remains **695 passed, 5 skipped, 0 failed**.
+
+- Three formerly skipped optional native tests were explicitly enabled: `calendar-native`, `calendar-proposal-native`, and `connector-native`. Fresh result: **3 passed, 0 failed, 0 skipped**
+- The official Runtime binary SHA256 listed above was verified before and after. Four deterministic loopback model calls were made, with zero paid calls
+- Calendar evidence covers exact future UTC, persisted schedule identities across BFF restart, and pause/resume/cancel. Proposal evidence covers owner confirmation before native schedule admission and immutable old Call receipt. No due triggers fired
+- Connector-native evidence covers a real Runtime host-tool receipt, exact native provenance and replay after completion, using synthetic GitHub transport. It does not certify live GitHub connectivity
+- The anonymous public GitHub integration test was explicitly run twice. Both runs **failed**, each with `connector_request_aborted` at the five-second timeout (retry approximately 5004 ms). A DNS lookup for `api.github.com` returned `EAI_AGAIN`. This supports an environment/DNS transport issue as a possibility; neither the root cause nor a product defect is established
+- The root-only ownership test remains unrun because the execution user has UID 1000
+
+Local evidence logs: `/tmp/opendots-20261001-optional-runtime.log`, `/tmp/opendots-20261001-optional-github.log`, and `/tmp/opendots-20261001-optional-github-retry.log`. No production code or Runtime changes were made for this addendum. Graphical and real-device acceptance remain open; the browser observations above were corrected without retrying or bypassing the failed flow.

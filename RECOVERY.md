@@ -38,7 +38,7 @@ The then-pending focused task-provenance review and bounded receipt-storage regr
 - Native registered-resource fixture: 2 scripted calls; live stream/reconnect fixture: 1 scripted call. Neither uses a paid or external model
 - Exact native attribution, generation regression, stale approval precedence, bounded task lookup and later-independent control-chain recovery hardened after independent review
 - Pinned Morphz source remains clean at `7e8f7d81f8b00fd45544d94d5b9a321214633df1`
-- Graphical attempt was blocked by cloud-browser URL security policy before login. No screenshot, browser navigation, real-device or full-product acceptance is claimed
+- Graphical attempt returned `net::ERR_BLOCKED_BY_CLIENT` before login; a later failed-tab selection separately returned a protocol error. The cause is unconfirmed (see docs/VALIDATION_CURRENT.md). No screenshot, browser navigation, real-device or full-product acceptance is claimed
 
 Remote integrated-core checkpoint `4b44059ddd193149675a04378668a01c5fc22538` was fetched and verified with exact tree `79044bd7b7bedab2dda6e0c188e2d3f88ae9a966`, matching local `867e191507b89742f4516ec0093be30aa73654ea`. Final hardening follows that checkpoint.
 
@@ -54,4 +54,9 @@ A one-pass comparison against surviving milestone descriptions and historical te
 
 Last verified published UI/desktop checkpoint before final publication: remote `26b6e2fd09e82883fc0e4fccf724dbd4f0478813`, exact tree `958d7c36ad76bec6aeb53ed5aee49b5f6770c3d7`, equal to local `c1708ec5b7e595c6e9ec3eacea60a18f8b68d943`. Final code and documentation are published and verified separately by frozen tree identity.
 
-No known unimplemented behavior remains in the enumerated recorded core milestones. This does not claim exhaustive equivalence to unavailable original source. Real-model and graphical/device acceptance, pending-approval-over-Runtime-restart, deployment/private-account setup and experimental current-schema backup remain the explicit boundaries above. The cloud browser never reached login because of its URL security policy, and no bypass was attempted.
+No known unimplemented behavior remains in the enumerated recorded core milestones. This does not claim exhaustive equivalence to unavailable original source. Real-model and graphical/device acceptance, pending-approval-over-Runtime-restart, deployment/private-account setup and experimental current-schema backup remain the explicit boundaries above. The cloud browser never reached login. Initial navigation returned `net::ERR_BLOCKED_BY_CLIENT`; selecting the failed tab later returned a protocol error, with its actual URL unknown. This does not establish an explicit loopback HTTP prohibition. No bypass was attempted.
+
+
+## Supplemental verification and browser correction — 2026-10-01 04:41 UTC
+
+Final reconstruction documentation checkpoint local `214f087bb31c614485965c150f139c17cdc768d3` and remote `5db148523658bfec01834b76c64a3bd6229437b7` have exact tree `54a18cddb0ff349d0b2afccecf8003fd2a4fcc38`. A separate optional native run now passes 3 tests with no failures/skips, four scripted loopback calls and zero paid calls; official binary hash verified before/after. The aggregate 695-pass/5-skip record is unchanged. Two explicit live anonymous GitHub test attempts failed with five-second `connector_request_aborted`; DNS `EAI_AGAIN` suggests a possible transport issue without establishing root cause. Root-only ownership remains unrun at UID 1000. Full supplemental evidence and corrected distinct browser errors are recorded in docs/VALIDATION_CURRENT.md. This is documentation-only; graphical acceptance remains unverified.

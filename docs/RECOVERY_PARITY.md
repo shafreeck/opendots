@@ -67,7 +67,7 @@ This is a behavior-and-evidence audit of the reconstruction, not a claim that th
 
 The surviving source baseline freshly passed 551 tests with 5 skips. Historical records mention 695 passes with 5 skips for the inaccessible later tree. The reconstructed suite was rebuilt from surviving source, patch scripts, recorded contracts and new independent regression tests; original later test files were not recovered. Different counts are neither proof of regression nor proof of parity. The checklist above and fresh exact-commit results are the evidence.
 
-The cloud-browser attempt was denied by URL security policy before login; no page navigation, rendering, downloads or screenshots were tested in a real browser. Real model/BYOK use requires secure configuration and an explicit paid-test scope. Mac/mobile/graphical-host acceptance, deployment, private OAuth, unsupported import contracts and experimental current-schema backup remain separate gates. Voice is deferred.
+Initial cloud-browser navigation returned `net::ERR_BLOCKED_BY_CLIENT`; later selecting the failed tab returned a separate protocol error, with the actual failed-tab URL unknown. No explicit loopback HTTP prohibition or root cause is established; no page navigation, rendering, downloads or screenshots were tested in a real browser. Real model/BYOK use requires secure configuration and an explicit paid-test scope. Mac/mobile/graphical-host acceptance, deployment, private OAuth, unsupported import contracts and experimental current-schema backup remain separate gates. Voice is deferred.
 
 ## Endpoint acceptance ledger
 
@@ -81,4 +81,9 @@ The cloud-browser attempt was denied by URL security policy before login; no pag
 - GET `/api/authored-documents/:id/versions/:version/content`: owner authentication, exact bytes/hash, inert attachment media, sandbox CSP, nosniff, logout denial and actual native-generated content tested
 - POST `/api/host-tools/documents/call`: private separate callback token, exact native proof, receipt replay/change conflict, limits and restart reconnect tested; not a browser mutation endpoint
 
-HTTP/VM coverage is distinct from graphical browser coverage. The policy-blocked cloud browser did not reach any product page.
+HTTP/VM coverage is distinct from graphical browser coverage. The failed cloud-browser attempt did not reach any product page; see the distinct observed errors in VALIDATION_CURRENT.md.
+
+
+## Supplemental optional checks
+
+The separate 2026-10-01 optional native run passes `calendar-native`, `calendar-proposal-native`, and `connector-native`: 3 passed, 0 failed, 0 skipped; four loopback scripted calls, zero paid calls, official binary hash unchanged before/after. Connector transport in that successful native test is synthetic. Two explicitly enabled live anonymous GitHub attempts failed with five-second `connector_request_aborted`; DNS returned `EAI_AGAIN`, without proving a root cause or product defect. Root-only ownership remains unrun at UID 1000. These results do not alter the original aggregate 695 passed/5 skipped; see VALIDATION_CURRENT.md for exact checkpoint identity and evidence logs.
