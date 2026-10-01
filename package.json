@@ -1,0 +1,32 @@
+{
+  "name": "opendots",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first assistant product shell built on the Morphz runtime contract",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "test": "node --test test/*.test.ts",
+    "check": "node --check src/server.ts && node --check src/runtime-service.ts && node --check src/runtime-store.ts && node --check src/runtime-stream.ts && node --check src/model-settings.ts && node --check src/computer-control.ts && node --check public/app.js && node --check src/voice-service.ts && node --check public/voice-capture.js && node --check public/voice-processor.js && node --check src/attachment-upload.ts && node --check src/objective-input.ts && node --check src/computer-edge-client.ts && node --check src/computer-edge-executor.ts && node --check src/computer-approvals.ts && node --check src/computer-host.ts && node --check src/computer-config.ts && node --check src/linux-computer.ts && node --check src/linux-desktop.ts && node --check src/linux-desktop-vnc.ts",
+    "demo": "OPENDOTS_MODE=demo node src/server.ts",
+    "test:runtime": "node scripts/runtime-smoke.mjs --product",
+    "typecheck": "tsc --noEmit",
+    "test:runtime-stream": "node scripts/runtime-stream-smoke.mjs",
+    "test:runtime-resources": "node scripts/runtime-resource-smoke.mjs",
+    "test:runtime-computer-edge": "node scripts/runtime-computer-edge-smoke.mjs",
+    "test:runtime-calendar-delivery": "node scripts/runtime-calendar-delivery-smoke.mjs"
+  },
+  "dependencies": {
+    "@novnc/novnc": "1.7.0",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "@types/ws": "8.18.2",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+coverage/
+.DS_Store
+
+.data/
+
+native/linux-desktop/opendots-linux-desktop

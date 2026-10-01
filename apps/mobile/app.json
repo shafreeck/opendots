@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "OpenDots",
+    "slug": "opendots-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.opendots.mobile",
+      "infoPlist": { "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": false } }
+    },
+    "android": {
+      "package": "app.opendots.mobile",
+      "permissions": ["INTERNET"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO", "android.permission.CAMERA", "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION", "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", "android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO", "android.permission.READ_MEDIA_AUDIO"]
+    },
+    "updates": { "enabled": false }
+  }
+}

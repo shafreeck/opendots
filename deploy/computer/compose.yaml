@@ -1,0 +1,39 @@
+name: opendots-computer
+services:
+  computer:
+    build:
+      context: ../..
+      dockerfile: deploy/computer/Dockerfile
+    image: opendots-computer:local
+    user: "1000:1000"
+    # Never publish VNC, CDP, X11, or the container-internal app listener.
+    # Relay preserves the original Host/Origin checked by the app on 3210.
+    ports:
+      - "127.0.0.1:3210:3211"
+    environment:
+      OPENDOTS_MODE: runtime
+      OPENDOTS_DB_PATH: /state/opendots.sqlite
+    volumes:
+      - product-state:/state
+      - browser-profile:/home/node/browser
+      - downloads:/home/node/Downloads
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
+      - /home/node/.cache:rw,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=0700
+      - /home/node/.pki:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=0700
+      - /home/node/.config:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=0700
+    shm_size: 1gb
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp.json
+    pids_limit: 512
+    mem_limit: 4g
+    cpus: 2.0
+    stop_grace_period: 15s
+    restart: "no"
+volumes:
+  product-state:
+  browser-profile:
+  downloads:

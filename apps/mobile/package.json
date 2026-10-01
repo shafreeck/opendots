@@ -1,0 +1,30 @@
+{
+  "name": "@opendots/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Native HTTPS client for an explicitly configured OpenDots product server",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "EXPO_NO_TELEMETRY=1 expo start --offline --dev-client",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./test/register-polyfill.mjs --test test/*.test.ts",
+    "export": "EXPO_OFFLINE=1 EXPO_NO_TELEMETRY=1 expo export --platform all --max-workers 1 --output-dir dist"
+  },
+  "dependencies": {
+    "expo": "57.0.26",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-url-polyfill": "4.0.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "@types/react": "19.2.14",
+    "typescript": "5.9.2"
+  }
+}

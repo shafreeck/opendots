@@ -1,0 +1,78 @@
+{
+  "checkedAt": "2026-09-30T17:22:00Z",
+  "command": "npm audit --package-lock-only --ignore-scripts --json",
+  "scope": "Registry advisory response for exact npm locks; not a binary or comprehensive security audit",
+  "entries": [
+    {
+      "lockfile": "package-lock.json",
+      "sha256": "b2f6098ec9d3f9a04164d456e9a6a8af685247a6e2d21a7848bc75131082a839",
+      "summary": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "affectedPackages": [],
+      "directAdvisories": []
+    },
+    {
+      "lockfile": "apps/desktop/package-lock.json",
+      "sha256": "1cb35d97c4cca3538fb1163fa691165233fd6529b113662bc32ed0a2f8f3990e",
+      "summary": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "affectedPackages": [],
+      "directAdvisories": []
+    },
+    {
+      "lockfile": "apps/mobile/package-lock.json",
+      "sha256": "59b715c76cbbc5dd8bf5af8e03a9d034950caf16bcf86d0ec0366cc301604bdc",
+      "summary": {
+        "info": 0,
+        "low": 0,
+        "moderate": 19,
+        "high": 0,
+        "critical": 0,
+        "total": 19
+      },
+      "affectedPackages": [
+        "@expo/cli",
+        "@expo/config",
+        "@expo/config-plugins",
+        "@expo/dom-webview",
+        "@expo/inline-modules",
+        "@expo/local-build-cache-provider",
+        "@expo/log-box",
+        "@expo/metro-config",
+        "@expo/prebuild-config",
+        "@expo/router-server",
+        "babel-preset-expo",
+        "expo",
+        "expo-asset",
+        "expo-constants",
+        "expo-file-system",
+        "expo-font",
+        "expo-keep-awake",
+        "uuid",
+        "xcode"
+      ],
+      "directAdvisories": [
+        {
+          "dependency": "uuid",
+          "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+          "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+          "severity": "moderate",
+          "range": "<11.1.1",
+          "fixAvailable": false
+        }
+      ]
+    }
+  ]
+}

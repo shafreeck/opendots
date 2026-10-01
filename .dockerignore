@@ -1,0 +1,12 @@
+.git
+node_modules
+.data
+.runtime
+.env
+.env.*
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+**/*.db-*
+coverage
+opendots-deliverables

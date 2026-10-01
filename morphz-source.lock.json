@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/morphz-ai/morphz",
+  "revision": "7e8f7d81f8b00fd45544d94d5b9a321214633df1",
+  "inspectedAt": "2026-09-30",
+  "integration": "independent typed Session IO v1 HTTP adapter",
+  "upstreamRustToolchain": "1.97.1",
+  "referenceSdkSha256": "4e7af2cc2b2cc59cdbfb041bdc25784a5ec13ac0c179225e1774cfb657a37e4a",
+  "runtimeModificationPolicy": "upstream-unmodified-only",
+  "validation": {
+    "actualRuntimeWithDeterministicProvider": "passed",
+    "realModelProvider": "not_run",
+    "liveGraphicalDesktop": "not_run",
+    "evidence": [
+      "docs/RUNTIME_VALIDATION.md",
+      "docs/COMPUTER_EDGE.md",
+      "docs/ACCEPTANCE.md"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@opendots/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated desktop window for a separately running local opendots server",
+  "main": "main.cjs",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "44.5.1" }
+}
