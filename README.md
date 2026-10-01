@@ -8,7 +8,7 @@ This is active implementation, not a completed dots clone. [STATUS](docs/STATUS.
 
 ## Run the application
 
-Requirements: Node.js 24, a local Morphz 0.1.3 Runtime matching revision `7e8f7d81f8b00fd45544d94d5b9a321214633df1`.
+Requirements: latest Node.js 24.x (at least 24.2, because startup uses `import.meta.main`); live chat also requires a local Morphz 0.1.3 Runtime matching revision `7e8f7d81f8b00fd45544d94d5b9a321214633df1`.
 
 ```sh
 npm ci
@@ -19,7 +19,7 @@ MORPHZ_URL=http://127.0.0.1:18804 npm start
 
 Open http://127.0.0.1:3210 . When Runtime authentication is enabled, configure `MORPHZ_OPERATOR_TOKEN` securely in the server environment. Never put it in a URL, frontend bundle, Git, or chat. This first implementation is a single-user local host; its operator adapter refuses remote Runtime origins. Do not expose it as a public multi-user service.
 
-No configured Runtime? The UI explicitly shows configuration required. It does not generate fake answers. SQLite product data defaults to `.data/opendots.sqlite`; restart reuses the exact saved Agent/Context/Session binding. Use `OPENDOTS_DB_PATH` to choose another isolated product database. Never point different runtimes at one verified binding.
+No configured Runtime? Run `npm start` to open the real application shell; the UI explicitly shows configuration required and live chat is unavailable. No frontend build step is required. Startup reads the process environment and does not automatically load `.env`; export settings in your shell or explicitly arrange environment loading. `OPENDOTS_RUNTIME_BINARY` is a test-fixture setting, not an application startup option. It does not generate fake answers. SQLite product data defaults to `.data/opendots.sqlite`; restart reuses the exact saved Agent/Context/Session binding. Use `OPENDOTS_DB_PATH` to choose another isolated product database. Never point different runtimes at one verified binding.
 
 ## Optional owner login
 
@@ -85,7 +85,7 @@ Morphz owns cognitive state, Objective/Thread lifecycle, execution and approvals
 
 ## Source management
 
-Work is managed in local Git with incremental commits. No remote repository has been created or published. GitHub account, repository and visibility remain separate publication decisions. No new source ZIPs are produced.
+The reconstructed source is published in the public repository [shafreeck/opendots](https://github.com/shafreeck/opendots). Original latest source and Git history were not recovered; reconstructed local and published histories have distinct ancestry, with exact tree mappings recorded in [RECOVERY.md](RECOVERY.md). Start future collaboration from a fresh clone of the public repository. No new source ZIPs are produced.
 
 Original opendots code has not yet selected a public distribution license. Upstream and dependency licenses remain applicable; release license/SBOM review is still required.
 
@@ -103,7 +103,7 @@ Voice is off by default. See [VOICE.md](docs/VOICE.md) for the explicit server-s
 - Memory is agent-managed; the UI offers read/search and conversational correction, with no manual editor
 - BYOK uses Morphz provider/account/model/Secret Store facilities
 - The computer goal is a headed same-session live preview, human takeover and safe return; actual device validation and AI-return adapter remain unfinished
-- Source is maintained as local incremental Git commits. No further ZIP delivery. GitHub destination/visibility is undecided and nothing has been pushed
+- Source is maintained with incremental Git commits and published at [shafreeck/opendots](https://github.com/shafreeck/opendots); see [RECOVERY.md](RECOVERY.md) for verified checkpoints and reconstructed-history status. No further ZIP delivery
 - Full-access mode was authorized only for the isolated fixed-command concurrency fixture. It is an explicit test flag, not a product or deployment default
 
 ### Optional headed desktop execution
