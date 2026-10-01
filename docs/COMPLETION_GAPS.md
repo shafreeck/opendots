@@ -1,6 +1,6 @@
 # Remaining work and decision boundaries
 
-This is an active implementation, not a complete dots/Muse clone. STATUS.md and ACCEPTANCE.md distinguish implemented code from live proof.
+Reconstruction update (2026-10-01): the core chain is rebuilt and freshly verified at the levels in VALIDATION_CURRENT.md. The historical inventory below is supplemented by RECOVERY.md. This remains an active implementation, not a complete dots/Muse clone. STATUS.md and ACCEPTANCE.md distinguish implemented code from live proof.
 
 ## Engineering work still available without real credentials
 
@@ -26,6 +26,6 @@ These limitations stop only the relevant live validation; they do not justify ca
 - Real model/provider configuration must be entered through a secure user-managed path, never pasted into chat; assistant-driven paid validation needs a bounded authorized use
 - Existing dedicated Edge node, reviewed input-server build and explicit private desktop/Runtime topology are needed for real computer acceptance; no automatic persistent pairing or privilege expansion
 - External account OAuth/client registration and delivery destinations require their own authorized setup
-- GitHub owner/repository/visibility, original-code license and deployment host remain undecided; no push/publication/deployment has occurred
+- Source collaboration is now on the authorized public repository shafreeck/opendots with verified durable checkpoints. Original-code license and deployment host remain separate release decisions; no application deployment has occurred
 
 The Runtime stays unmodified. Manual memory editing is out of scope, not a blocked required feature. Source is managed by incremental local Git commits; no source ZIP delivery is planned.

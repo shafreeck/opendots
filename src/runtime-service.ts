@@ -79,6 +79,7 @@ export class RuntimeService {
   private streamAbort?: AbortController;
   private streamPromise?: Promise<void>;
   private drafts?: DraftProjection;
+  private historyProjection = { incomplete: false, pageBudget: 16 };
   private objectiveProjection = { truncated: false, limit: 2000 };
   private streamStatus: 'disabled' | 'connected' | 'reconnecting' = 'disabled';
   status: RuntimeStatus;
@@ -195,11 +196,12 @@ export class RuntimeService {
       }
       // A page may contain zero rendered events but a changed opaque cursor.
       // Keep traversing until the cursor is unchanged, bounded per tick for responsiveness.
-      for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
+      this.historyProjection.incomplete = true;
+      for (let pageNumber = 0; pageNumber < this.historyProjection.pageBudget; pageNumber++) {
         const previous = this.store.cursor(binding.sessionId);
         const page = await adapter.listEvents(binding.sessionId, previous);
         this.store.ingest(binding.sessionId, page, previous);
-        if (page.cursor === previous) break;
+        if (page.cursor === previous) { this.historyProjection.incomplete = false; break; }
       }
       const [, approvals] = await Promise.all([this.overview(), adapter.listApprovals(binding.sessionId)]);
       this.store.replaceApprovals(approvals.approvals);
@@ -251,7 +253,10 @@ export class RuntimeService {
   }
   private async execute(command: InputCommand): Promise<InputCommand> {
     try { await this.initialize(); }
-    catch (error) { this.status = { ...this.status, status: 'unavailable', message: safeFailure(error) }; throw new RuntimeUnavailableError(safeFailure(error)); }
+    catch (error) {
+      if (error instanceof MorphzError && [401,403].includes(error.status)) this.store.record(command.id,command.status==='unknown'?'unknown':'rejected',command.receipt,'upstream_authorization_denied');
+      this.status = { ...this.status, status: 'unavailable', message: safeFailure(error) }; throw new RuntimeUnavailableError(safeFailure(error));
+    }
     const adapter = this.requireAdapter(); const binding = this.binding!; const payload = command.payload;
     this.store.attempted(command.id);
     try {
@@ -481,7 +486,7 @@ export class RuntimeService {
       if(scheduler.context_id!==b.contextId||!Array.isArray(scheduler.objectives))throw new ConflictError('Task scheduler does not match fixed Context');
       const objective=scheduler.objectives.find(row=>row.objective.id===id)?.objective;
       if(!objective)throw new MissingError('Exact task is not present in the bounded native scheduler');
-      const reasons:string[]=[];let nativeEvents:Array<Record<string,unknown>>=[];
+      const reasons:string[]=this.historyProjection.incomplete?['typed_history_page_budget']:[];let nativeEvents:Array<Record<string,unknown>>=[];
       try {const page=await adapter.getNativeSessionEvents(b.sessionId);if(!Array.isArray(page.events))throw new Error('Invalid native event page');nativeEvents=page.events;if(page.next_before_sequence!==null&&page.next_before_sequence!==undefined)reasons.push('native_history_window');}
       catch(error){if(error instanceof MorphzError&&[401,403].includes(error.status))throw error;reasons.push('native_history_unavailable');}
       const ioEvents=this.store.events(b.sessionId),artifacts=new Artifacts(adapter,b.sessionId,()=>ioEvents).list();
@@ -495,8 +500,10 @@ export class RuntimeService {
       }
       if(detail.threads.length>25)reasons.push('focused_thread_limit');
       detail=projectTaskDetail({binding:b,objective,scheduler:{...scheduler,threads:[...snapshots.values()]},nativeEvents,ioEvents,artifacts,approvals:this.store.views('approval'),previous:cached,reasons});
-      const jobIds=detail.threads.flatMap(t=>t.activations.flatMap((a:any)=>a.jobs.map((j:any)=>j.id)));
-      detail.authoredDocuments=this.authoredDocumentFacade().forTask({objectiveId:id,jobIds,threadIds:detail.threads.map(t=>t.id)});
+      const allJobIds=[...new Set<string>(detail.threads.flatMap(t=>t.activations.flatMap((a:any)=>a.jobs.map((j:any)=>j.id))))],jobIds=allJobIds.slice(0,2000);
+      const authored=this.authoredDocumentFacade().forTask({objectiveId:id,jobIds,threadIds:[...new Set<string>(detail.threads.map(t=>t.id))]});
+      detail.authoredDocuments={...authored,truncated:authored.truncated||allJobIds.length>2000};
+      if(allJobIds.length>2000)detail.bounds={incomplete:true,reasons:[...new Set([...detail.bounds.reasons,'authored_job_lookup_limit'])]};
       this.assertRequestAuthorized();this.store.setView('objective',objective.id,objective);this.store.setView('task_detail',id,detail);return detail;
     } catch(error) {
       this.assertRequestAuthorized();
@@ -587,7 +594,7 @@ export class RuntimeService {
   async selectModel(input: { model: string; expectedCurrent: string; reasoningEffort?: string }) { return (await this.modelFacade()).select(input); }
   async bindProvider(input: { accountId: string }) { return (await this.modelFacade()).bind(input); }
   async connectProvider(input: unknown) { return (await this.modelFacade()).connect(input); }
-  snapshot() { return { mode: 'runtime', disclaimer: 'Actual Morphz transport. Runtime admission is not task completion.', runtime: { ...this.status }, ...this.store.snapshot(), drafts: this.drafts?.snapshot() ?? [], stream: { status: this.streamStatus, transport: this.streamTransport, reconnectBehavior: this.streamTransport === 'application_ws' ? 'discard_unfinished_until_fresh_start_or_durable_output' : 'replace_from_snapshot' }, objectiveProjection: { ...this.objectiveProjection }, calendar:{...this.calendarStatus}, notifications:this.notifications?.snapshot()??null }; }
+  snapshot() { return { mode: 'runtime', disclaimer: 'Actual Morphz transport. Runtime admission is not task completion.', runtime: { ...this.status }, ...this.store.snapshot(), drafts: this.drafts?.snapshot() ?? [], stream: { status: this.streamStatus, transport: this.streamTransport, reconnectBehavior: this.streamTransport === 'application_ws' ? 'discard_unfinished_until_fresh_start_or_durable_output' : 'replace_from_snapshot' }, objectiveProjection: { ...this.objectiveProjection }, historyProjection: {...this.historyProjection}, calendar:{...this.calendarStatus}, notifications:this.notifications?.snapshot()??null }; }
   async close() {
     this.closed = true; if (this.timer) clearInterval(this.timer); this.streamAbort?.abort();
     const calendarClosed=this.calendar?.close();

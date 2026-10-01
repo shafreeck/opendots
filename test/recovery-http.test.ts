@@ -30,6 +30,8 @@ test('history paging enforces bounded pages, strict fields, and csrf',async t=>{
  assert.deepEqual(calls,[{before:'event-cursor',limit:20}]);
  for(const body of [{limit:101},{limit:0},{limit:1.5},{sessionId:'other'},{before:''}])assert.equal((await post('/api/messages/page',body)).status,400);
  assert.equal((await post('/api/messages/page',{},'')).status,403);assert.equal(calls.length,1);
+ assert.equal((await post('/api/messages/page',{before:'a'.repeat(800)})).status,200);
+ assert.equal((await post('/api/messages/page',{before:'a'.repeat(1025)})).status,400);
 });
 test('wait response preserves explicit confirmation, exact Session and request identity',async t=>{
  const {app,post}=await fixture(t);const calls:any[]=[];

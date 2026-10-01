@@ -325,7 +325,7 @@ export function createApplication(options: ApplicationOptions) {
       if (url.pathname === '/api/messages/page' && runtime) {
         fields(input,['before','limit']);
         if(input.limit!==undefined&&(!Number.isSafeInteger(input.limit)||Number(input.limit)<1||Number(input.limit)>100))throw new HttpError(400,'Page limit must be 1–100');
-        json(response,200,runtime.messagesPage({...input.before!==undefined?{before:textField(input.before,'History cursor',200)}:{},...input.limit!==undefined?{limit:Number(input.limit)}:{}}));return;
+        json(response,200,runtime.messagesPage({...input.before!==undefined?{before:textField(input.before,'History cursor',1024)}:{},...input.limit!==undefined?{limit:Number(input.limit)}:{}}));return;
       }
       if (url.pathname === '/api/jobs') {
         fields(input, runtime ? ['prompt', 'idempotencyKey'] : ['prompt', 'idempotencyKey', 'requireApproval']);

@@ -49,29 +49,36 @@ export function projectTaskDetail(input:TaskDetailInput):TaskDetail {
  const native=(input.nativeEvents??[]).filter(e=>id(e.id)&&eventScoped(e));
  const sources=rows(input.scheduler.threads).filter(s=>{const t=record(s.thread);return id(t.id)&&id(t.root_turn_id)&&scoped(t);});
  const byThread=new Map(sources.map(s=>[s.thread.id,s]));
- const selected=new Map<string,{snapshot:Row;generation:number;association:string;activationIds:Set<string>|null}>();
+ const selected=new Map<string,{snapshot:Row;generation:number|null;association:string;activationIds:Set<string>|null}>();
  for(const s of sources){const t=s.thread,supervision=record(t.supervision);if(supervision.supervisor_kind==='objective'&&supervision.supervisor_id===o.id&&positive(supervision.generation)&&supervision.generation<=o.generation)selected.set(t.id,{snapshot:s,generation:supervision.generation,association:'objective_supervision',activationIds:null});}
  // An attached child is related only through an already-proven exact parent and
  // its execution generation. Merely sharing root_turn_id is insufficient.
  for(let pass=0;pass<32;pass++){let changed=false;for(const s of sources){const t=s.thread,p=record(t.supervision);if(selected.has(t.id)||p.supervisor_kind!=='thread'||p.lifetime!=='attached'||p.supervisor_id!==p.parent_thread_id)continue;const parent=selected.get(p.parent_thread_id);if(parent&&p.generation===parent.snapshot.thread.generation){selected.set(t.id,{snapshot:s,generation:parent.generation,association:'attached_parent_supervision',activationIds:null});changed=true;}}if(!changed)break;}
  const activations=new Map<string,{snapshot:Row;row:Row}>();
- for(const snapshot of sources)for(const row of rows(snapshot.activations)){const a=record(row.activation);if(id(a.id)&&scoped(a)&&a.root_turn_id===snapshot.thread.root_turn_id)activations.set(a.id,{snapshot,row});}
- const anchors=new Set<string>();
+ for(const snapshot of sources)for(const row of rows(snapshot.activations)){const a=record(row.activation);if(id(a.id)&&scoped(a)&&positive(a.generation)&&a.generation<=snapshot.thread.generation&&a.root_turn_id===snapshot.thread.root_turn_id)activations.set(a.id,{snapshot,row});}
+ const anchors=new Map<string,number|null>();
  const objectiveRow=rows(input.scheduler.objectives).find(r=>r.objective?.id===o.id),active=record(objectiveRow?.active_evaluation);
- if(id(active.id)&&scoped(active))anchors.add(active.id);
- for(const e of native){if(route(e,'objective_id')===o.id&&id(route(e,'activation_id'))){const generation=route(e,'objective_generation');if(generation==null||(positive(generation)&&generation<=o.generation))anchors.add(route(e,'activation_id'));}}
- for(const prior of previous?.threads??[])if(prior.association==='objective_evaluation')for(const a of rows(prior.activations))if(id(a.id))anchors.add(a.id);
- for(const activationId of anchors){const found=activations.get(activationId);if(!found)continue;const t=found.snapshot.thread,supervision=record(t.supervision);if(supervision.supervisor_kind==='objective'&&supervision.supervisor_id!==o.id)continue;const existing=selected.get(t.id);if(existing?.activationIds===null)continue;if(existing)existing.activationIds!.add(activationId);else selected.set(t.id,{snapshot:found.snapshot,generation:o.generation,association:'objective_evaluation',activationIds:new Set([activationId])});}
+ if(id(active.id)&&scoped(active))anchors.set(active.id,o.generation);
+ for(const e of native){if(route(e,'objective_id')===o.id&&id(route(e,'objective_evaluation_id'))&&id(route(e,'activation_id'))){const activationId=route(e,'activation_id'),found=activations.get(activationId),generation=route(e,'objective_generation');if(found&&(route(e,'thread_id')==null||route(e,'thread_id')===found.snapshot.thread.id)&&(route(e,'root_turn_id')==null||route(e,'root_turn_id')===found.snapshot.thread.root_turn_id)&&(generation==null||(positive(generation)&&generation<=o.generation))&&!anchors.has(activationId))anchors.set(activationId,positive(generation)?generation:null);}}
+ for(const prior of previous?.threads??[])if(prior.association==='objective_evaluation')for(const a of rows(prior.activations))if(id(a.id))anchors.set(a.id,positive(prior.objectiveGeneration)?prior.objectiveGeneration:null);
+ for(const [activationId,objectiveGeneration] of anchors){const found=activations.get(activationId);if(!found)continue;const t=found.snapshot.thread,supervision=record(t.supervision);if(supervision.supervisor_kind==='objective'&&supervision.supervisor_id!==o.id)continue;const existing=selected.get(t.id);if(existing?.activationIds===null)continue;if(existing)existing.activationIds!.add(activationId);else selected.set(t.id,{snapshot:found.snapshot,generation:objectiveGeneration,association:'objective_evaluation',activationIds:new Set([activationId])});}
  const pending=new Map((input.approvals??[]).map(a=>[a.id,a])),approvals:Row[]=[],threads:Row[]=[];
  for(const [threadId,evidence] of [...selected].slice(0,100)){
   const s=evidence.snapshot,t=s.thread,projected:Row[]=[];
   for(const row of rows(s.activations).slice(0,200)){
-   const a=record(row.activation);if(!scoped(a)||a.root_turn_id!==t.root_turn_id||!id(a.id)||(evidence.activationIds&&!evidence.activationIds.has(a.id)))continue;
+   const a=record(row.activation);if(!scoped(a)||!positive(a.generation)||a.generation>t.generation||a.root_turn_id!==t.root_turn_id||!id(a.id)||(evidence.activationIds&&!evidence.activationIds.has(a.id)))continue;
    const jobs:Row[]=[];
    for(const entry of rows(row.jobs).slice(0,200)){
     const j=record(entry.job);if(!id(j.id)||!scoped(j)||j.thread_id!==threadId||j.activation_id!==a.id)continue;
     jobs.push({id:j.id,toolName:text(j.tool_name,120),status:text(j.status,80),cancelRequested:j.cancel_requested_at!=null,resultEventId:id(j.result_event_id)?j.result_event_id:null});
-    const ap=record(entry.approval),p=pending.get(ap.id)??ap;
+    const ap=record(entry.approval),known=pending.get(ap.id);
+    // Compare native revisions before combining independent read projections. A
+    // stale pending list must never resurrect a newer resolved scheduler row.
+    let p:Row=ap;
+    if(known&&known.job_id===j.id&&Number.isSafeInteger(known.revision)&&Number.isSafeInteger(ap.revision)){
+      if(known.revision>ap.revision)p=known;
+      else if(known.revision===ap.revision&&known.status!==ap.status)p={};
+    }
     if(id(p.id)&&p.job_id===j.id&&p.status==='pending_human'&&Number.isSafeInteger(p.revision))approvals.push({id:p.id,revision:p.revision,status:p.status,jobId:j.id,threadId,toolName:text(j.tool_name,120)});
    }
    projected.push({id:a.id,generation:a.generation,status:text(a.status,80),jobs});
@@ -90,7 +97,7 @@ export function projectTaskDetail(input:TaskDetailInput):TaskDetail {
   const threadId=event.thread_id??(raw&&route(raw,'thread_id')),root=event.root_turn_id??(raw&&route(raw,'root_turn_id')),activation=event.activation_id??(raw&&route(raw,'activation_id'));
   if(!id(threadId)||!id(root))continue;
   const evidence=selected.get(threadId);if(!evidence||evidence.snapshot.thread.root_turn_id!==root)continue;
-  if(raw&&((route(raw,'thread_id')!=null&&route(raw,'thread_id')!==threadId)||(route(raw,'root_turn_id')!=null&&route(raw,'root_turn_id')!==root)))continue;
+  if(raw&&((route(raw,'thread_id')!=null&&route(raw,'thread_id')!==threadId)||(route(raw,'root_turn_id')!=null&&route(raw,'root_turn_id')!==root)||(route(raw,'activation_id')!=null&&activation!=null&&route(raw,'activation_id')!==activation)))continue;
   if(evidence.activationIds&&(!id(activation)||!evidence.activationIds.has(activation)))continue;
   const content=event.message?.content,value=record(content?.value),body=content?.encoding==='json'?text(value.text,100000):content?.encoding==='utf8'?text(content.text,100000):null;
   const delivery={eventId:event.event_id,text:body,threadId,rootTurnId:root,activationId:id(activation)?activation:null,association:evidence.association,createdAt:text(event.timestamp,100),resources:input.artifacts.filter(a=>a.sourceEventId===event.event_id&&a.origin==='output')};
@@ -98,8 +105,8 @@ export function projectTaskDetail(input:TaskDetailInput):TaskDetail {
   deliveries.set(event.event_id,delivery);
  }
  const history=new Map((previous?.history??[]).map(e=>[e.eventId,e]));
- for(const e of native){if(route(e,'objective_id')!==o.id&&route(e,'requested_objective_id')!==o.id)continue;const topic=text(e.topic,160);if(!topic||!topic.startsWith('objective/'))continue;history.set(e.id,{eventId:e.id,topic,createdAt:text(e.timestamp,100),status:text(e.payload?.status,80)});}
- const regressed=previous&&previous.objective.revision>o.revision;if(regressed)reasons.add('native_revision_regressed');
+ for(const e of native){if(route(e,'objective_id')!==o.id&&route(e,'requested_objective_id')!==o.id)continue;const topic=text(e.topic,160);if(!topic||!topic.startsWith('objective/'))continue;history.set(e.id,{eventId:e.id,topic,createdAt:text(e.timestamp,100),status:text(e.payload?.objective_status??e.payload?.status,80)});}
+ const regressed=previous&&(previous.objective.revision>o.revision||previous.objective.generation>o.generation);if(regressed)reasons.add('native_revision_regressed');
  const projectedObjective={id:o.id,prompt:o.stated_objective,status:o.status,revision:o.revision,generation:o.generation,statusReason:text(o.status_reason,4000),wait:taskWait(o.wait_condition),terminal:terminal.has(o.status)};
  const allDeliveries=[...deliveries.values()],resourceIds=new Set(allDeliveries.flatMap(d=>d.resources.map(a=>a.id)));
  if(allDeliveries.length>500)reasons.add('deliveries_detail_limit');
