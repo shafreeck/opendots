@@ -166,3 +166,13 @@ test('version-specific native save retains exact version route and owner checks'
   assert.equal(f.state.calls.filter(call=>call.url.endsWith('/api/auth')).length,3);
   f.controller.close();
 });
+
+
+test('authored immutable versions share exact authenticated save flow without widening URL authority',async()=>{
+ const url=origin+'/api/authored-documents/pdoc-12345678-1234-1234-1234-123456789abc/versions/pver-abcdef12-abcd-abcd-abcd-abcdef123456/content';
+ assert.equal(artifactURL(url,origin),true);
+ for(const bad of [url+'?token=x',url+'#x',url.replace('/versions/','/versions/../'),url.replace('pdoc-','doc-'),url.replace('pver-','ver-'),url.replace('127.0.0.1','localhost'),url.replace('/content','/preview')])assert.equal(artifactURL(bad,origin),false);
+ const f=fixture();f.download(f.item({getURL:()=>url,getURLChain:()=>[url]}));await tick();
+ assert.equal(f.state.saves.length,1);assert.equal(f.state.saves[0]!.bytes.toString(),'registered bytes');assert.ok(f.state.calls.some(c=>c.url===url));assert.equal(f.state.prompts.length,1);f.controller.close();
+ const denied=fixture();denied.state.auth=false;denied.download(denied.item({getURL:()=>url,getURLChain:()=>[url]}));await tick();assert.equal(denied.state.saves.length,0);denied.controller.close();
+});

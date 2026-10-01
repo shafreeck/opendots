@@ -10,7 +10,7 @@ function productPage(value, origin) {
   try { const u = new URL(value); return u.origin === origin && !u.username && !u.password && !u.search && ['/', '/index.html'].includes(u.pathname); } catch { return false; }
 }
 function artifactURL(value, origin) {
-  return typeof value === 'string' && new RegExp('^' + origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/(?:artifacts/[a-f0-9]{64}/content|artifact-documents/doc-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/versions/ver-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/content)$').test(value);
+  return typeof value === 'string' && new RegExp('^' + origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/api/(?:artifacts/[a-f0-9]{64}/content|artifact-documents/doc-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/versions/ver-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/content|authored-documents/pdoc-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/versions/pver-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/content)$').test(value);
 }
 function suggestedName(value) {
   // Untrusted Content-Disposition may suggest a name, never a directory or hidden file.
