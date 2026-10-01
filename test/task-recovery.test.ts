@@ -67,3 +67,19 @@ test('two concurrent reviews cannot admit two successor controls for one unknown
 test('typed history catchup budget is explicit and never substitutes receipt or decoded cursors',async t=>{
  const b=backend();let n=0;const fetcher:typeof fetch=async(raw,init)=>new URL(String(raw)).pathname.endsWith('/io/events')?Response.json({events:[],cursor:'opaque-page-'+(++n),subscription:{}}):b.fetcher(raw,init);const s=new RuntimeService({dbPath:file(t),baseUrl:'http://127.0.0.1:9911',fetch:fetcher,autoStart:false});await s.refresh();assert.equal(n,16);assert.deepEqual(s.snapshot().historyProjection,{incomplete:true,pageBudget:16});assert.equal(s.store.cursor(s.store.binding()!.sessionId),'opaque-page-16');await s.close();
 });
+
+test('response-lost turn cancellation preserves uncertainty after stale retry and restart',async t=>{
+ const path=file(t),b=backend();let revision=1,cancellations=0;
+ const fetcher:typeof fetch=async(raw,init={})=>{
+  if(new URL(String(raw)).pathname.endsWith('/turns/root-cancel/thread')){
+   if(init.method==='POST'){const input=JSON.parse(String(init.body));cancellations++;if(input.expected_revision!==revision)return Response.json({error:{code:'revision_conflict'}},{status:409});revision++;throw new TypeError('response lost after cancellation');}
+   return Response.json({status:'cancelled',revision});
+  }
+  return b.fetcher(raw,init);
+ };
+ const options={dbPath:path,baseUrl:'http://127.0.0.1:9911',fetch:fetcher,autoStart:false};let s=new RuntimeService(options);await s.refresh();const session=s.store.binding()!.sessionId;
+ s.store.ingest(session,{events:[{io_version:'1',type:'input.accepted',event_id:'turn-input',sequence:1,session_id:session,root_turn_id:'root-cancel'}],cursor:'same-cursor',subscription:{}},s.store.cursor(session));
+ await assert.rejects(s.cancelTurn('root-cancel',1,'lost-turn-cancel'));assert.equal(s.commandLookup('lost-turn-cancel').command!.status,'unknown');
+ await assert.rejects(s.cancelTurn('root-cancel',1,'lost-turn-cancel'));assert.equal(s.commandLookup('lost-turn-cancel').command!.status,'unknown');await s.close();s=new RuntimeService(options);
+ await assert.rejects(s.cancelTurn('root-cancel',1,'lost-turn-cancel'));assert.equal(s.commandLookup('lost-turn-cancel').command!.status,'unknown');assert.equal(cancellations,3);await s.close();
+});
