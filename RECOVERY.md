@@ -45,3 +45,13 @@ Remote integrated-core checkpoint `4b44059ddd193149675a04378668a01c5fc22538` was
 Local origin is configured as `https://github.com/shafreeck/opendots.git`. Local reconstruction history and connector-created remote ancestry differ; no tracking branch or force-push is configured. For future shared work, start from a separate clone of remote main, preserving this local recovery history and its explicit tree mappings.
 
 The independent core coding/review work is complete at this boundary. External gates remain securely configured and explicitly budgeted real-model testing, an authorized graphical host/device, and separate deployment/account permissions. Experimental backup of the current schema remains unsupported and fail-closed; cross-session and arbitrary binary document import remain unsupported; voice stays deferred.
+
+## Parity audit complete — 2026-10-01 03:58 UTC
+
+Exact code checkpoint `9601a544a43a7eb7050b26009256883a19c9824f` was exported independently and verified: 700 tests = 695 passed + 5 skipped + 0 failed; strict TypeScript and syntax passed; actual unchanged Runtime 12-call recovery passed again. Frontend coverage is 153 VM tests. A clean offline `npm ci --ignore-scripts` lockfile installation was verified on this reconstructed source line. No dependencies or Runtime source were changed during the parity fixes.
+
+A one-pass comparison against surviving milestone descriptions and historical test titles found and repaired the remaining concrete gaps: accepted approval receipt acknowledgement, ordinary-submission ambiguity, generated-history head refresh, slow history viewport, desktop generated-file saving, response-lost turn cancellation, denied native/policy retry handling and synchronous host admission policy. The behavior/endpoint checklist is in docs/RECOVERY_PARITY.md. The original later source and original test files remain unrecovered; equal test totals do not imply identical code or coverage.
+
+Last verified published UI/desktop checkpoint before final publication: remote `26b6e2fd09e82883fc0e4fccf724dbd4f0478813`, exact tree `958d7c36ad76bec6aeb53ed5aee49b5f6770c3d7`, equal to local `c1708ec5b7e595c6e9ec3eacea60a18f8b68d943`. Final code and documentation are published and verified separately by frozen tree identity.
+
+No known unimplemented behavior remains in the enumerated recorded core milestones. This does not claim exhaustive equivalence to unavailable original source. Real-model and graphical/device acceptance, pending-approval-over-Runtime-restart, deployment/private-account setup and experimental current-schema backup remain the explicit boundaries above. The cloud browser never reached login because of its URL security policy, and no bypass was attempted.

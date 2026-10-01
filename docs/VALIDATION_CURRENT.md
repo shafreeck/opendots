@@ -1,12 +1,12 @@
 # Reconstructed-tree validation
 
-2026-10-01. This is fresh reconstruction evidence, not certification of the inaccessible historical `683ccdd` tree. Original history was not recovered. See [recovery ledger](../RECOVERY.md).
+2026-10-01 03:58 UTC. Exact code checkpoint: `9601a544a43a7eb7050b26009256883a19c9824f`. This is fresh reconstruction evidence, not certification of the inaccessible historical `683ccdd` tree. Original history was not recovered. See [recovery ledger](../RECOVERY.md).
 
 ## Current checks
 
-- Aggregate: 660 tests, 655 passed, 5 intentionally skipped, 0 failed
+- Aggregate: 700 tests, 695 passed, 5 intentionally skipped, 0 failed
 - Strict TypeScript, Node syntax checks and whitespace checks passed
-- Frontend: 136 VM tests pass, including 35 new reconstruction regressions
+- Frontend: 153 VM tests pass, including 52 new reconstruction regressions
 - Unchanged official Morphz 0.1.3 binary, revision `7e8f7d81f8b00fd45544d94d5b9a321214633df1`, SHA256 `29a5c5cb04cdc407858db04b49c5f52fd18892c831aad395e01cc3e4f172b8d3`
 
 ## Fresh actual Runtime evidence
@@ -35,3 +35,9 @@ Earlier surviving validation is preserved in VALIDATION_20260930_SURVIVING.md as
 ## Graphical smoke attempt
 
 A dedicated dot-cloud browser was pointed at an isolated loopback fixture. Navigation failed with `net::ERR_BLOCKED_BY_CLIENT`, and selecting the tab explicitly reported a browser URL security-policy block. The browser never reached login. Six-view navigation, task/document controls, downloads, screenshots and graphical rendering remain untested. No forwarding workaround or policy bypass was attempted; the fixture was stopped. This does not establish Mac/mobile acceptance.
+
+## Final recorded-milestone parity audit
+
+[RECOVERY_PARITY.md](RECOVERY_PARITY.md) maps each recorded core milestone and endpoint to fresh evidence. Final fixes include accepted-approval acknowledgement after the pending row disappears; ambiguous ordinary chat/task submissions fail closed unless an exact original is explicitly selected; monotonic document-head updates and delayed-page viewport preservation; exact desktop authored-version saves; response-lost turn cancellation; and synchronous native-host policy/owner guards with no automatic retry after authorization denial.
+
+The exact immutable export passed 700 tests (695 passed, 5 skipped) and the 12-call native core journey again. A clean offline, scripts-disabled lockfile install was also verified on the reconstructed source line. The numerical total coincides with a historical report but is not evidence of original test-source recovery or identical coverage; the explicit parity checklist is the evidence.
